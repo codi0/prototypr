@@ -60,6 +60,8 @@ class Prototypr {
 		if(!isset($this->config->baseUrl)) {
 			$this->config->baseUrl = $this->config->host . '/' . trim($basePath, '/') . '/';
 		}
+		//set current url
+		$this->config->url = $this->config->host . $reqUri;
 		//file loader
 		spl_autoload_register(function($class) use($app) {
 			//format path
