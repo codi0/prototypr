@@ -1,0 +1,44 @@
+# Allow access
+Order Allow,Deny
+Allow from all
+
+# Set options
+<IfModule mod_negotiation.c>
+	Options -Indexes -MultiViews +FollowSymLinks
+</IfModule>
+
+# URL rewriting
+<IfModule mod_rewrite.c>
+
+	# Rewrite URLs
+	RewriteEngine On
+	
+	# Set scheme
+	RewriteCond %{HTTPS}s ^(on(s)|offs)$
+	RewriteRule ^ - [e=SCHEME:http%2]
+
+	# Set Authorization header
+	RewriteCond %{HTTP:Authorization} !^$
+	RewriteRule .* - [e=HTTP_AUTHORIZATION:%1]
+
+	# Force no www
+	RewriteCond %{HTTP_HOST} ^(www\.)(.*)
+	RewriteCond %{HTTP_HOST} !localhost
+	RewriteRule .* %{ENV:SCHEME}://%2%{REQUEST_URI} [R=301,L] 
+
+	# Force SSL?
+	<ifModule mod_ssl.c>
+		RewriteCond %{HTTPS} off
+		RewriteRule .* https://%{HTTP_HOST}%{REQUEST_URI} [R=301,L] 
+	</IfModule>
+
+	# Deny access to protected files
+	RewriteCond %{THE_REQUEST} \.(php|phtml|html|tpl|conf|log|sql|keep|htaccess) [NC]
+	RewriteRule .* - [R=404,L]
+
+	# Route through index.php
+	RewriteCond %{REQUEST_FILENAME} !-d
+	RewriteCond %{REQUEST_FILENAME} !-f
+	RewriteRule (.*) index.php/$1 [L]
+
+</IfModule>
