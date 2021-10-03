@@ -1,3 +1,3 @@
-(function(undefined) {
+window.addEventListener('load', function() {
 
 })();

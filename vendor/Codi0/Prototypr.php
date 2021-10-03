@@ -58,10 +58,11 @@ class Prototypr {
 		$this->config->host = 'http' . ($this->config->ssl ? 's' : '') . '://' . $_SERVER['HTTP_HOST'];
 		//set base url?
 		if(!isset($this->config->baseUrl)) {
-			$this->config->baseUrl = $this->config->host . '/' . trim($basePath, '/') . '/';
+			$tmp = trim($basePath, '/');
+			$this->config->baseUrl = $this->config->host . '/' . ($tmp ? $tmp . '/' : '');
 		}
 		//set current url
-		$this->config->url = $this->config->host . $reqUri;
+		$this->config->url = $this->config->host . $_SERVER['REQUEST_URI'];
 		//file loader
 		spl_autoload_register(function($class) use($app) {
 			//format path
@@ -252,7 +253,7 @@ class Prototypr {
 		//create view
 		$tpl = new class {
 			private $data = [];
-			public function block($name, array $data=[]) {
+			public function template($name, array $data=[]) {
 				global $app;
 				//build path
 				$path = $app->config->baseDir . '/templates/' . $name . '.php';
@@ -309,13 +310,52 @@ class Prototypr {
 				global $app;
 				return $app->clean($value, $clean);
 			}
-			public function url($path, $clean='') {
+			public function url($path='', array $opts=[]) {
 				global $app;
-				return $app->clean($app->config->baseUrl . $path, $clean);
+				//default opts
+				$opts = array_merge([
+					'time' => true,
+				], $opts);
+				//return
+				return $app->url($path, $opts);
 			}
 		};
+		//has layout?
+		if(strpos($name, ':') !== false) {
+			list($name, $tmp) = explode(':', $name, 2);
+			$name = 'layouts/' . $name;
+			$data['template'] = $tmp;
+		}
 		//return
-		return $tpl->block($name, $data);
+		return $tpl->template($name, $data);
+	}
+
+	public function url($path='', array $opts=[]) {
+		//default opts
+		$opts = array_merge([
+			'time' => false,
+			'query' => true,
+			'clean' => '',
+		], $opts);
+		//set path
+		$path = trim($path ?: $this->config->url);
+		//remove query string?
+		if(!$opts['query']) {
+			$path = explode('?', $path, 2)[0];
+		}
+		//is relative url?
+		if($path[0] !== '/' && strpos($path, '://') === false) {
+			$tmp = $path;
+			$path = $this->config->baseUrl . $path;
+			//add timestamp?
+			if($opts['time'] && strpos($tmp, '.') !== false) {
+				if($time = @filemtime($this->config->baseDir . '/' . $tmp)) {
+					$path .= (strpos($path, '?') !== false ? '&' : '?') . $time;
+				}
+			}
+		}
+		//return
+		return $this->clean($path, $opts['clean']);
 	}
 
 	public function cron($name, $fn, $interval, $reset=false) {

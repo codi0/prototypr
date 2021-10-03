@@ -11,9 +11,9 @@ $app = \Codi0\Prototypr::singleton([
 //Route: Home
 $app->route('/', function($app) {
 	//load template
-	$app->template('home', [
+	$app->template('master:home', [
 		'welcome' => 'Hi there!',
-		'page' => [
+		'meta' => [
 			'title' => 'Prototypr demo',
 		],
 	]);
