@@ -40,6 +40,10 @@ class Prototypr {
 		if(!isset($this->config->isDev)) {
 			$this->config->isDev = true;
 		}
+		//set composer opts?
+		if(!isset($this->config->composer)) {
+			$this->config->composer = [];
+		}
 		//set base dir?
 		if(!isset($this->config->baseDir)) {
 			$this->config->baseDir = dirname(get_included_files()[0]);
@@ -63,7 +67,7 @@ class Prototypr {
 		}
 		//set current url
 		$this->config->url = $this->config->host . $_SERVER['REQUEST_URI'];
-		//file loader
+		//default file loader
 		spl_autoload_register(function($class) use($app) {
 			//format path
 			$path = $app->config->baseDir . '/vendor/' . str_replace('\\', '/', $class) . '.php';
@@ -74,11 +78,16 @@ class Prototypr {
 		});
 		//default services
 		$this->services = array_merge([
+			'composer' => function($app) {
+				return new Composr(array_merge([ 'baseDir' => $app->config->baseDir ], $app->config->composer));
+			},
 			'db' => function($app) {
 				$host = isset($app->config->dbHost) ? $app->config->dbHost : 'localhost';
 				return new \PDO('mysql:host=' . $host . ';dbname=' . $app->config->dbName, $app->config->dbUser, $app->config->dbPass);
 			}
 		], $this->services);
+		//sync composer
+		$this->composer->sync();
 		//start buffer
 		ob_start();
 	}
@@ -86,6 +95,15 @@ class Prototypr {
 	public function __destruct() {
 		//auto-run
 		$this->run();
+	}
+
+	public function __isset($key) {
+		//is config?
+		if($key === 'config') {
+			return true;
+		}
+		//is service?
+		return isset($this->services[$key]);
 	}
 
 	public function __get($key) {
@@ -139,15 +157,21 @@ class Prototypr {
 		return $this->services[$name];
 	}
 
-	public function helper($name, $fn) {
-		//is valid callable?
-		if(!is_callable($fn)) {
-			throw new \Exception("Helper $name is not callable");
+	public function helper($name, $fn='%%null%%') {
+		//delete helper?
+		if($fn === null) {
+			if(isset($this->helpers[$name])) {
+				unset($this->helpers[$name]);
+			}
+			return true;
 		}
-		//set helper
-		$this->helpers[$name] = $fn;
+		//set helper?
+		if($fn !== '%%null%%') {
+			$this->helpers[$name] = $fn;
+			return true;
+		}
 		//return
-		return true;
+		return isset($this->helpers[$name]) ? $this->helpers[$name] : null;
 	}
 
 	public function route($name, $callable) {
@@ -179,12 +203,16 @@ class Prototypr {
 			//save to file
 			return file_put_contents($path, $data, $append ? FILE_APPEND : null);
 		}
-		//has data?
-		if(($data = @file_get_contents($path)) === false) {
+		//get data
+		$data = @file_get_contents($path);
+		//data found?
+		if($data === false) {
 			return null;
 		}
+		//decode data
+		$decode = @json_decode($data, true);
 		//return
-		return @json_decode($data, true) ?: $data;
+		return is_null($decode) ? $data : $decode;
 	}
 
 	public function input($key, $clean='html') {
@@ -224,7 +252,7 @@ class Prototypr {
 		if(is_string($value) || is_numeric($value)) {
 			//is html?
 			if($context === 'html') {
-				return htmlspecialchars($value, ENT_QUOTES|ENT_SUBSTITUTE, 'UTF-8', true);
+				return htmlspecialchars($value, ENT_QUOTES|ENT_SUBSTITUTE, 'UTF-8', false);
 			}
 			//is attribute?
 			if($context === 'attr') {
@@ -241,7 +269,22 @@ class Prototypr {
 						return sprintf('&#x%02X;', $ord);
 					}
 				}, $value);
-			}			
+			}
+			//is js?
+			if($context === 'js') {
+				return preg_replace_callback('/[^a-z0-9,\._]/iSu', function($matches) {
+					$chr = $matches[0];
+					if(strlen($chr) == 1) {
+						return sprintf('\\x%02X', ord($chr));
+					}
+					$hex = strtoupper(bin2hex($chr));
+					if(strlen($hex) <= 4) {
+						return sprintf('\\u%04s', $hex);
+					} else {
+						return sprintf('\\u%04s\\u%04s', substr($hex, 0, 4), substr($hex, 4, 4));
+					}
+				}, $value);		
+			}		
 		}
 		//unprocessed
 		return $value;
@@ -253,6 +296,27 @@ class Prototypr {
 		//create view
 		$tpl = new class {
 			private $data = [];
+			public function __call($method, array $args=[]) {
+				global $app;
+				//is url?
+				if($method === 'url') {
+					//format args
+					$args = array(
+						0 => isset($args[0]) ? $args[0] : '',
+						1 => array_merge([ 'time' => true ], (isset($args[1]) ? $args[1] : [])),
+					);
+				}
+				//allowed app method?
+				if(in_array($method, [ 'url', 'clean' ])) {
+					return call_user_func_array([ $app, $method ], $args);
+				}
+				//helper method?
+				if($helper = $app->helper($method)) {
+					return call_user_func_array($helper, $args);
+				}
+				//not found
+				throw new \Exception("Template helper method not found: $method");
+			}
 			public function template($name, array $data=[]) {
 				global $app;
 				//build path
@@ -304,20 +368,7 @@ class Prototypr {
 					$data = $app->clean($data, $clean);
 				}
 				//return
-				return ($data || $data == '0') ? $data : '';
-			}
-			public function clean($value, $clean='html') {
-				global $app;
-				return $app->clean($value, $clean);
-			}
-			public function url($path='', array $opts=[]) {
-				global $app;
-				//default opts
-				$opts = array_merge([
-					'time' => true,
-				], $opts);
-				//return
-				return $app->url($path, $opts);
+				return $data;
 			}
 		};
 		//has layout?
@@ -326,8 +377,34 @@ class Prototypr {
 			$name = 'layouts/' . $name;
 			$data['template'] = $tmp;
 		}
+		//set js vars
+		$data['js'] = isset($data['js']) ? $data['js'] : [];
+		//loop through default config vars
+		foreach([ 'baseUrl', 'isDev', 'app', 'route' ] as $param) {
+			if(property_exists($this->config, $param)) {
+				$data['js'][$param] = $this->config->$param;
+			}
+		}
+		//set meta vars
+		$data['meta'] = isset($data['meta']) ? $data['meta'] : [];
+		//has noindex?
+		if(!isset($data['meta']['noindex']) && isset($this->config->isDev)) {
+			$data['meta']['noindex'] = $this->config->isDev;
+		}
+		//buffer
+		ob_start();
+		//load template
+		$tpl->template($name, $data);
+		//get html;
+		$html = ob_get_clean();
+		//add js vars?
+		if($data['js']) {
+			$clean = $this->clean($data['js']);
+			$js = '<script>window.pageData = ' . json_encode($clean) . ';</script>';
+			$html = str_replace('</head>', $js . "\n" . '</head>', $html);
+		}
 		//return
-		return $tpl->template($name, $data);
+		echo $html;
 	}
 
 	public function url($path='', array $opts=[]) {
@@ -358,11 +435,12 @@ class Prototypr {
 		return $this->clean($path, $opts['clean']);
 	}
 
-	public function cron($name, $fn, $interval, $reset=false) {
+	public function cron($name, $fn='%%null%%', $interval=3600, $reset=false) {
 		//set vars
 		$next = null;
 		$update = false;
-		$jobs = $this->cache('cronJobs') ?: [];
+		$app = $this;
+		$jobs = $this->cache('cron') ?: [];
 		//loop though jobs
 		foreach($jobs as $k => $v) {
 			if($v['name'] === $name) {
@@ -371,13 +449,13 @@ class Prototypr {
 			}
 		}
 		//delete job?
-		if($next && ($reset || !$fn)) {
+		if($next && ($reset || $fn === null)) {
 			unset($jobs[$next], $this->cron[$next]);
 			$update = true;
 			$next = null;
 		}
 		//add job?
-		if(!$next && $fn) {
+		if(!$next && $fn && $fn !== '%%null%%') {
 			//get next run time
 			$next = time() + $interval;
 			//add to array
@@ -394,13 +472,23 @@ class Prototypr {
 		//update cache?
 		if($update) {
 			ksort($jobs);
-			$this->cache('cronJobs', $jobs);
+			$this->cache('cron', $jobs);
 		}
 		//save callback?
-		if($fn) {
+		if($fn && $fn !== '%%null%%') {
 			$this->cron[$next] = [ 'name' => $name, 'interval' => $interval, 'fn' => $fn ];
 			ksort($this->cron);
 		}
+		//stop here?
+		if(!$next || !isset($this->cron[$next])) {
+			return null;
+		}
+		//get function
+		$fn = $this->cron[$next]['fn'];
+		//return function
+		return function() use($fn, $app) {
+			return call_user_func($fn, $app);
+		};
 	}
 
 	public function run() {
@@ -413,14 +501,14 @@ class Prototypr {
 		//get output
 		$output = trim(ob_get_clean());
 		//has cron?
-		if($this->cron) {
+		if($this->cron && (!isset($this->config->cron) || $this->config->cron)) {
 			//check time
 			$next = array_keys($this->cron)[0];
-			$isRunning = $this->cache('cronRunning');
+			$isRunning = $this->cache('cron-running');
 			//reset cron?
 			if($isRunning && $isRunning < (time() - 300)) {
 				$isRunning = null;
-				$this->cache('cronRunning', null);
+				$this->cache('cron-running', null);
 			}
 			//call cron?
 			if(!isset($_GET['cron']) && $next <= time() && !$isRunning) {
@@ -452,9 +540,9 @@ class Prototypr {
 				set_time_limit(300);
 				ignore_user_abort(true);
 				//lock cron
-				$this->cache('cronRunning', time());
+				$this->cache('cron-running', time());
 				//get jobs cache
-				$jobs = $this->cache('cronJobs') ?: [];
+				$jobs = $this->cache('cron') ?: [];
 				//loop through jobs
 				foreach($this->cron as $time => $meta) {
 					//stop here?
@@ -469,7 +557,7 @@ class Prototypr {
 					}
 				}
 				//release cron
-				$this->cache('cronRunning', null);
+				$this->cache('cron-running', null);
 			}
 		}
 		//has output?
@@ -481,11 +569,14 @@ class Prototypr {
 		if($this->routes) {
 			//route found?
 			if(isset($this->routes[$this->config->pathInfo])) {
+				$this->config->route = $this->config->pathInfo;
 				call_user_func($this->routes[$this->config->pathInfo], $this);
 			} else if(isset($this->routes['404'])) {
+				$this->config->route = '404';
 				call_user_func($this->routes['404'], $this);
 			} else {
 				//default 404
+				$this->config->route = '';
 				header("HTTP/1.0 404 Not Found");
 				echo 'Page not found';
 			}

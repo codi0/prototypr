@@ -2,7 +2,7 @@
 <html lang="<?= $tpl->data('meta.lang') ?: 'en' ?>">
 <head>
 	<meta charset="<?= $tpl->data('meta.charset') ?: 'utf-8' ?>">
-	<title><?= $tpl->data('meta.title') ?></title>
+	<title><?= $tpl->data('meta.title') ?> | <?= $tpl->data('config.name') ?></title>
 <?php if($tpl->data('meta.noindex')) { ?>
 	<meta name="robots" content="noindex">
 <?php } ?>
@@ -12,6 +12,7 @@
 	<meta name="format-detection" content="telephone=no">
 	<meta name="msapplication-tap-highlight" content="no">
 	<link rel="canonical" href="<?= $tpl->url(null, [ 'query' => false ]) ?>">
+	<link rel="manifest" href="<?= $tpl->url('manifest.json') ?>">
 	<link rel="icon" href="<?= $tpl->url('favicon.png') ?>">
 	<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/codi0/fstage@0.2.2/fstage.min.css">
 	<link rel="stylesheet" href="<?= $tpl->url('assets/app.css') ?>">
@@ -19,7 +20,9 @@
 	<script defer src="<?= $tpl->url('assets/app.js') ?>"></script>
 	<?= $tpl->data('meta.head') ?>
 </head>
-<body>
-	<?php $tpl->template($tpl->data('template')) ?>
+<body class="page <?= str_replace([ '_', '-' ], ' ', $tpl->data('template')) ?>">
+	<div id="app">
+		<?php $tpl->template($tpl->data('template')) ?>
+	</div>
 </body>
 </html>

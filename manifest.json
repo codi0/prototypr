@@ -1,0 +1,19 @@
+{
+	"dir": "ltr",
+	"lang": "en",
+	"name": "My App",
+	"short_name": "My App",
+	"description": "App description goes here",
+	"start_url": ".",
+	"scope": ".",
+	"display": "minimal-ui",
+	"theme_color": "#000",
+	"background_color": "#fff",
+	"icons": [
+		{
+			"src": "favicon.png",
+			"type": "image/png",
+			"sizes": "512x512"
+		}
+	]
+}
