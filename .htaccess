@@ -33,7 +33,8 @@ Allow from all
 	</IfModule>
 
 	# Deny access to protected files
-	RewriteCond %{THE_REQUEST} \.(php|phtml|html|tpl|conf|log|sql|keep|htaccess) [NC]
+	RewriteCond %{THE_REQUEST} composer [OR]
+	RewriteCond %{THE_REQUEST} \.(cache|conf|htaccess|html|log|keep|php|phtml|sql|tpl)
 	RewriteRule .* - [R=404,L]
 
 	# Route through index.php
