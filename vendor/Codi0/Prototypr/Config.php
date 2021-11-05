@@ -14,6 +14,16 @@ class Config {
 		$this->readOnly = (bool) $readOnly;
 	}
 
+	public function __isset($key) {
+		return isset($this->data[$key]);
+	}
+
+	public function __unset($key) {
+		if(array_key_exists($key, $this->data)) {
+			unset($this->data[$key]);
+		}
+	}
+
 	public function __get($key) {
 		return isset($this->data[$key]) ? $this->data[$key] : null;
 	}

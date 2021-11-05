@@ -459,7 +459,7 @@ namespace Codi0\Prototypr {
 			}
 			//loop through default config vars
 			foreach([ 'baseUrl', 'isDev', 'app', 'route' ] as $param) {
-				if(property_exists($this->config, $param)) {
+				if(isset($this->config->$param)) {
 					$data['js'][$param] = $this->config->$param;
 				}
 			}
@@ -775,9 +775,11 @@ namespace Codi0\Prototypr {
 						$meta['params'] = array_map(function($v) { return str_replace('/', '', $v); }, $params);
 						//filter route?
 						if($meta = $this->event('app.route', $meta)) {
-							//update vars
+							//update flag
 							$found = true;
-							$this->config->route = $meta;
+							//set config vars
+							$this->config->route = $meta['path'];
+							$this->config->routeParams = $meta['params'];
 							//call route
 							call_user_func($meta['fn'], $this);
 							//stop
