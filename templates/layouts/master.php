@@ -14,11 +14,10 @@
 	<link rel="canonical" href="<?= $tpl->url(null, [ 'query' => false ]) ?>">
 	<link rel="manifest" href="<?= $tpl->url('manifest.json') ?>">
 	<link rel="icon" href="<?= $tpl->url('favicon.png') ?>">
-	<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/codi0/fstage@0.2.2/fstage.min.css">
+	<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/codi0/fstage@0.2.3/fstage.min.css">
 	<link rel="stylesheet" href="<?= $tpl->url('assets/app.css') ?>">
-	<script defer src="https://cdn.jsdelivr.net/gh/codi0/fstage@0.2.2/fstage.min.js"></script>
+	<script defer src="https://cdn.jsdelivr.net/gh/codi0/fstage@0.2.3/fstage.min.js"></script>
 	<script defer src="<?= $tpl->url('assets/app.js') ?>"></script>
-	<?= $tpl->data('meta.head') ?>
 </head>
 <body class="page <?= str_replace([ '_', '-' ], ' ', $tpl->data('template')) ?>">
 	<div id="app">

@@ -32,7 +32,7 @@ self.addEventListener('message', function(e) {
 //fetch client resource
 self.addEventListener('fetch', function(e) {
 	//debugging
-	debug && console.log('Resource fetched', e);
+	//debug && console.log('Resource fetched', e);
 });
 
 //receive push notification

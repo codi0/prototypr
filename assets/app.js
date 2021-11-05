@@ -7,16 +7,20 @@ window.addEventListener('load', function() {
 			//register service worker
 			navigator.serviceWorker.register('sw.js').then(function(reg) {
 				//is waiting?
-				if(reg.waiting) {
+				if(reg && reg.waiting) {
 					reg.waiting.postMessage('skipWaiting');
 				}
-				//is ready?
-				navigator.serviceWorker.ready.then(function() {
-					//do nothing
+				//update found
+				reg.addEventListener('updatefound', function() {
+					location.reload();
 				});
 			}).catch(function(error) {
 				//show error
 				console.error(error.message);
+			});
+			//listen for messages
+			navigator.serviceWorker.addEventListener('message', function(e) {
+				//can listen and react to SW messages here (E.g. notifications)
 			});
 		}
 

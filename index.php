@@ -4,7 +4,7 @@
 require_once('vendor/Codi0/Prototypr.php');
 
 //Init: Create app
-$app = \Codi0\Prototypr::singleton([
+$app = prototypr([
 	'config' => [],
 ]);
 

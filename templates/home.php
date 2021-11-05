@@ -1,3 +1,1 @@
-<div id="app" class="page home">
-	<?= $tpl->data('welcome') ?>
-</div>
+<p><?= $tpl->data('welcome') ?></p>

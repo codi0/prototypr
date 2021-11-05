@@ -1,8 +1,8 @@
 <?php
 
-namespace Codi0;
+namespace Codi0\Prototypr;
 
-class Composr {
+class Composer {
 
 	protected $packages = [];
 	protected $isProduction = true;
@@ -44,7 +44,7 @@ class Composr {
 			}
 		}
 		//disable detect unicode
-		@ini_set('detect_unicode', 0);
+		ini_set('detect_unicode', 0);
 		//standardise env vars
 		foreach($this->env as $k => $v) {
 			//replace keys
@@ -78,7 +78,7 @@ class Composr {
 		], $opts);
 		//get composer file
 		$composerFile = $this->env['COMPOSER'];
-		$composerFileTime = (int) @filemtime($composerFile);
+		$composerFileTime = is_file($composerFile) ? filemtime($composerFile) : 0;
 		//composer exists?
 		if(!$composerFileTime) {
 			return null;
@@ -91,7 +91,7 @@ class Composr {
 		}
 		//get lock file
 		$lockFile = str_replace('.json', '.lock', $composerFile);
-		$lockFileTime = (int) @filemtime($lockFile);
+		$lockFileTime = is_file($lockFile) ? filemtime($lockFile) : 0;
 		//has latest lock file?
 		if(!$opts['force'] && $lockFileTime >= $composerFileTime) {
 			return null;
@@ -163,14 +163,14 @@ class Composr {
 		//set vars
 		$packages = [];
 		$lockFile = str_replace('.json', '.lock', $this->env['COMPOSER']);
-		//lock file found?
-		if($json = @file_get_contents($lockFile)) {
-			//decode json
-			if($json = @json_decode($json, true)) {
-				//add package names
-				foreach($json['packages'] as $p) {
-					$packages[$p['name']] = $this->env['COMPOSER_VENDOR_DIR'] . '/' . $p['name'];
-				}
+		//get json
+		$json = is_file($lockFile) ? file_get_contents($lockFile) : '';
+		$json = $json ? json_decode($json, true) : '';
+		//has data?
+		if($json) {
+			//add package names
+			foreach($json['packages'] as $p) {
+				$packages[$p['name']] = $this->env['COMPOSER_VENDOR_DIR'] . '/' . $p['name'];
 			}
 		}
 		//return
@@ -239,13 +239,13 @@ class Composr {
 		$args = $this->formatArgs($args, $cmd);
 		$tmpArgv = isset($GLOBALS['argv']) ? $GLOBALS['argv'] : [];
 		//store current limits
-		$ia = @ignore_user_abort();
-		$ml = @ini_get('memory_limit');
-		$tl = @ini_get('max_execution_time');
+		$ia = ignore_user_abort();
+		$ml = ini_get('memory_limit');
+		$tl = ini_get('max_execution_time');
 		//update limits
-		@ignore_user_abort(true);
-		@ini_set('memory_limit', '512M');
-		@ini_set('max_execution_time', 0);
+		ignore_user_abort(true);
+		ini_set('memory_limit', '512M');
+		ini_set('max_execution_time', 0);
 		//create dir?
 		if(!is_dir($this->env['COMPOSER_HOME'])) {
 			mkdir($this->env['COMPOSER_HOME'], 0755, true);
@@ -268,9 +268,9 @@ class Composr {
 		$GLOBALS['argv'] = $_SERVER['argv'] = $tmpArgv;
 		$GLOBALS['argc'] = $_SERVER['argc'] = count($tmpArgv);
 		//reset limits
-		@ignore_user_abort($ia);
-		@ini_set('memory_limit', $ml);
-		@ini_set('max_execution_time', $tl);
+		ignore_user_abort($ia);
+		ini_set('memory_limit', $ml);
+		ini_set('max_execution_time', $tl);
 		//return
 		return [
 			'cmd' => $cmd,
@@ -286,7 +286,7 @@ class Composr {
 			return;
 		}
 		//can download?
-		if($data = $this->getUrl($this->remotePharPath)) {
+		if($data = file_get_contents($this->remotePharPath)) {
 			//get dir
 			$dir = dirname($this->localPharPath);
 			//create dir?
@@ -303,43 +303,6 @@ class Composr {
 		if(!class_exists($this->composerClass)) {
 			require_once('phar://' . $this->localPharPath . '/src/bootstrap.php');
 		}
-	}
-
-	protected function getUrl($url, $default=null) {
-		//set vars
-		$timeout = 5;
-		$redirects = 5;
-		$ua = isset($_SERVER['HTTP_USER_AGENT']) ? $_SERVER['HTTP_USER_AGENT'] : '';
-		//use CURL?
-		if($this->fnEnabled('curl_init')) {
-			//use curl
-			$ch = curl_init();
-			//set options
-			curl_setopt_array($ch, [
-				CURLOPT_URL => $url,
-				CURLOPT_USERAGENT => $ua,
-				CURLOPT_TIMEOUT => $timeout,
-				CURLOPT_MAXREDIRS => $redirects,
-				CURLOPT_HEADER => false,
-				CURLOPT_RETURNTRANSFER => true,
-				CURLOPT_FOLLOWLOCATION => true,
-				CURLOPT_SSL_VERIFYHOST => false,
-				CURLOPT_SSL_VERIFYPEER => false,
-			]);
-			//make request
-			$res = curl_exec($ch);
-			//close
-			curl_close($ch);
-			//return
-			return $res;
-		}
-		//use file get contents
-		return file_get_contents($url, false, stream_context_create([
-			'http' => [
-				'timeout' => $timeout,
-				'user_agent' => $ua,
-			],
-		]));
 	}
 
 	protected function formatArgs(array $args, $cmd=null) {
@@ -381,7 +344,7 @@ class Composr {
 		//loop through ini get keys
 		foreach([ 'disable_functions', 'suhosin.executor.func.blacklist' ] as $k) {
 			//loop through functions
-			foreach(explode(',', @ini_get($k)) as $f) {
+			foreach(explode(',', ini_get($k)) as $f) {
 				if($f = trim($f)) {
 					$disabled[] = $f;
 				}
