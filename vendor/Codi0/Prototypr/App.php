@@ -44,8 +44,10 @@ namespace Codi0\Prototypr {
 			$app = $this;
 			$ssl = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS']) ? ($_SERVER['HTTPS'] !== 'off') : (isset($_SERVER['SERVER_PORT']) && $_SERVER['SERVER_PORT'] == 443);
 			$host = (isset($_SERVER['HTTP_HOST']) && $_SERVER['HTTP_HOST']) ? 'http' . ($ssl ? 's' : '') . '://' . $_SERVER['HTTP_HOST'] : '';
+			$baseDir = (isset($_SERVER['SCRIPT_FILENAME']) && $_SERVER['SCRIPT_FILENAME']) ? dirname($_SERVER['SCRIPT_FILENAME']) : '/';
+			$baseUri = (isset($_SERVER['SCRIPT_NAME']) && $_SERVER['SCRIPT_NAME']) ? dirname($_SERVER['SCRIPT_NAME']) : '/';
 			$reqUri = (isset($_SERVER['REQUEST_URI']) && $_SERVER['REQUEST_URI']) ? $_SERVER['REQUEST_URI'] : '/';
-			$baseUri = dirname($_SERVER['SCRIPT_NAME']) ?: '/';
+			$reqUriBase = explode('?', $reqUri)[0];
 			//loop through opts
 			foreach($opts as $k => $v) {
 				if(property_exists($this, $k)) {
@@ -72,8 +74,8 @@ namespace Codi0\Prototypr {
 				'host' => $host,
 				'url' => $host . $reqUri,
 				'baseUrl' => $host . str_replace('//', '/', '/' . trim($baseUri, '/') . '/'),
-				'baseDir' => dirname($_SERVER['SCRIPT_FILENAME']),
-				'pathInfo' => trim(str_replace($baseUri, '', explode('?', $reqUri)[0]), '/'),
+				'baseDir' => $baseDir,
+				'pathInfo' => trim(str_replace(($baseUri === '/' ? '' : $baseUri), '', $reqUriBase), '/'),
 				'configClass' => __NAMESPACE__ . '\\Config',
 				'viewClass' => __NAMESPACE__ . '\\View',
 			], $this->config);
