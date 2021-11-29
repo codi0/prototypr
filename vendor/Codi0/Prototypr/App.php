@@ -29,23 +29,22 @@ namespace Codi0\Prototypr {
 
 	class App {
 
-		private $config;
+		private $config = [];
 		private $helpers = [];
 		private $services = [];
 		private $events = [];
-
 		private $cron = [];
 		private $routes = [];
-		private $run = false;
-		private $version = null;
+	
+		private $_run = false;
 
 		public function __construct(array $opts=[]) {
 			//set vars
 			$app = $this;
 			$ssl = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS']) ? ($_SERVER['HTTPS'] !== 'off') : (isset($_SERVER['SERVER_PORT']) && $_SERVER['SERVER_PORT'] == 443);
 			$host = (isset($_SERVER['HTTP_HOST']) && $_SERVER['HTTP_HOST']) ? 'http' . ($ssl ? 's' : '') . '://' . $_SERVER['HTTP_HOST'] : '';
-			$baseDir = (isset($_SERVER['SCRIPT_FILENAME']) && $_SERVER['SCRIPT_FILENAME']) ? dirname($_SERVER['SCRIPT_FILENAME']) : '/';
-			$baseUri = (isset($_SERVER['SCRIPT_NAME']) && $_SERVER['SCRIPT_NAME']) ? dirname($_SERVER['SCRIPT_NAME']) : '/';
+			$baseDir = dirname($_SERVER['SCRIPT_FILENAME']);
+			$baseUri = dirname($_SERVER['SCRIPT_NAME']) ?: '/';
 			$reqUri = (isset($_SERVER['REQUEST_URI']) && $_SERVER['REQUEST_URI']) ? $_SERVER['REQUEST_URI'] : '/';
 			$reqUriBase = explode('?', $reqUri)[0];
 			//loop through opts
@@ -79,9 +78,6 @@ namespace Codi0\Prototypr {
 				'configClass' => __NAMESPACE__ . '\\Config',
 				'viewClass' => __NAMESPACE__ . '\\View',
 			], $this->config);
-			//init config object
-			$cls = $this->config['configClass'];
-			$this->config = new $cls($this->config);
 			//error reporting
 			error_reporting(E_ALL);
 			ini_set('log_errors', 0);
@@ -103,11 +99,11 @@ namespace Codi0\Prototypr {
 			//default services
 			$this->services = array_merge([
 				'composer' => function($app) {
-					return new Composer(array_merge([ 'baseDir' => $app->config->baseDir ], $app->config->composer));
+					return new Composer(array_merge([ 'baseDir' => $app->config('baseDir') ], $app->config('composer')));
 				},
 				'db' => function($app) {
-					$host = $app->config->dbHost ?: 'localhost';
-					return new \PDO('mysql:host=' . $host . ';dbname=' . $app->config->dbName, $app->config->dbUser, $app->config->dbPass);
+					$host = $app->config('dbHost') ?: 'localhost';
+					return new \PDO('mysql:host=' . $host . ';dbname=' . $app->config('dbName'), $app->config('dbUser'), $app->config('dbPass'));
 				}
 			], $this->services);
 			//sync composer
@@ -115,14 +111,14 @@ namespace Codi0\Prototypr {
 			//start buffer
 			ob_start();
 			//load modules?
-			if(is_dir($this->config->baseDir . '/modules')) {
+			if(is_dir($this->config('baseDir') . '/modules')) {
 				//create closure
 				$moduleFn = function($file) use($app) {
 					include_once($file);
 				};
 				//loop through module files
-				foreach(new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($this->config->baseDir . '/modules')) as $file) {
-					if(strpos($file, 'module.php') !== false) {
+				foreach(new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($this->config('baseDir') . '/modules')) as $file) {
+					if(preg_match('/module\.php$/', $file)) {
 						$moduleFn($file);
 					}
 				}
@@ -130,38 +126,30 @@ namespace Codi0\Prototypr {
 			//init event
 			$this->event('app.init');
 			//upgrade event?
-			if($this->version) {
+			if($newV = $this->config('version')) {
 				//get cached version
-				$version = $this->cache('version');
+				$oldV = $this->cache('version');
 				//new version found?
-				if(!$version || $this->version > $version) {
-					$this->event('app.upgrade', [ 'from' => $version, 'to' => $this->version ]);
-					$this->cache('version', $this->version);
+				if(!$oldV || $newV > $oldV) {
+					$this->event('app.upgrade', [ 'from' => $oldV, 'to' => $newV ]);
+					$this->cache('version', $newV);
 				}
 			}
 		}
 
 		public function __destruct() {
 			//auto-run?
-			if($this->config->autoRun) {
+			if($this->config('autoRun')) {
 				$this->run();
 			}
 		}
 
 		public function __isset($key) {
-			//is config?
-			if($key === 'config') {
-				return true;
-			}
 			//is service?
 			return isset($this->services[$key]);
 		}
 
 		public function __get($key) {
-			//is config?
-			if($key === 'config') {
-				return $this->config;
-			}
 			//is service?
 			if(isset($this->services[$key])) {
 				return $this->service($key);
@@ -183,18 +171,23 @@ namespace Codi0\Prototypr {
 			return call_user_func_array($this->helpers[$name], $args);
 		}
 
-		public function service($name, $obj='%%null%%') {
-			//delete service?
-			if($obj === null) {
-				if(isset($this->services[$name])) {
-					unset($this->services[$name]);
-				}
-				return true;
+		public function config($key=null, $val='%%null%%') {
+			//get config array?
+			if($key === null) {
+				return $this->config;
 			}
+			//set config item?
+			if($val !== '%%null%%') {
+				$this->config[$key] = $val;
+			}
+			//get config item
+			return isset($this->config[$key]) ? $this->config[$key] : null;
+		}
+
+		public function service($name, $obj='%%null%%') {
 			//set service?
 			if($obj !== '%%null%%') {
 				$this->services[$name] = $obj;
-				return true;
 			}
 			//has service?
 			if(!isset($this->services[$name])) {
@@ -204,24 +197,16 @@ namespace Codi0\Prototypr {
 			if($this->services[$name] instanceof \Closure) {
 				$this->services[$name] = call_user_func($this->services[$name], $this);
 			}
-			//return
+			//get service
 			return $this->services[$name];
 		}
 
 		public function helper($name, $fn='%%null%%') {
-			//delete helper?
-			if($fn === null) {
-				if(isset($this->helpers[$name])) {
-					unset($this->helpers[$name]);
-				}
-				return true;
-			}
 			//set helper?
 			if($fn !== '%%null%%') {
 				$this->helpers[$name] = $fn;
-				return true;
 			}
-			//return
+			//get helper
 			return isset($this->helpers[$name]) ? $this->helpers[$name] : null;
 		}
 
@@ -297,7 +282,7 @@ namespace Codi0\Prototypr {
 			$closure = ($data instanceof \Closure);
 			//add path?
 			if(strpos($path, '/') === false) {
-				$path = $this->config->baseDir . '/cache/' . $path;
+				$path = $this->config('baseDir') . '/cache/' . $path;
 			}
 			//add ext?
 			if(strpos($path, '.') === false) {
@@ -338,7 +323,7 @@ namespace Codi0\Prototypr {
 		}
 
 		public function log($name, $data='%%null%%') {
-			return $this->cache("{$this->config->baseDir}/logs/{$name}.log", $data, true);	
+			return $this->cache($this->config('baseDir') . "/logs/{$name}.log", $data, true);	
 		}
 
 		public function logException($e, $display=true) {
@@ -361,7 +346,7 @@ namespace Codi0\Prototypr {
 			//log error
 			$this->log('errors', "[" . date('Y-m-d H:i:s') . "]\n" . $message);
 			//display error?
-			if($display && $this->config->isDev) {
+			if($display && $this->config('isDev')) {
 				//create html
 				$html = '<div class="error" style="margin:1em 0; padding: 0.5em; border:1px red solid;">' . str_replace("\n", "\n<br>\n", $message) . '</div>' . "\n";
 				//display html?
@@ -461,18 +446,22 @@ namespace Codi0\Prototypr {
 			}
 			//loop through default config vars
 			foreach([ 'baseUrl', 'isDev', 'app', 'route' ] as $param) {
-				if(isset($this->config->$param)) {
-					$data['js'][$param] = $this->config->$param;
+				//get value
+				$val = $this->config($param);
+				//set value?
+				if($val !== null) {
+					$data['js'][$param] = $val;
 				}
 			}
 			//has noindex?
-			if(!isset($data['meta']['noindex']) && $this->config->isDev) {
-				$data['meta']['noindex'] = $this->config->isDev;
+			if(!isset($data['meta']['noindex']) && $this->config('isDev')) {
+				$data['meta']['noindex'] = $this->config('isDev');
 			}
 			//buffer
 			ob_start();
 			//init
-			$tpl = new $this->config->viewClass($this);
+			$cls = $this->config('viewClass');
+			$tpl = new $cls($this);
 			//load template
 			$tpl->template($name, $data);
 			//get html;
@@ -495,7 +484,7 @@ namespace Codi0\Prototypr {
 				'clean' => '',
 			], $opts);
 			//set path
-			$path = trim($path ?: $this->config->url);
+			$path = trim($path ?: $this->config('url'));
 			//remove query string?
 			if(!$opts['query']) {
 				$path = explode('?', $path, 2)[0];
@@ -503,11 +492,11 @@ namespace Codi0\Prototypr {
 			//is relative url?
 			if($path[0] !== '/' && strpos($path, '://') === false) {
 				$tmp = $path;
-				$path = $this->config->baseUrl . $path;
+				$path = $this->config('baseUrl') . $path;
 				//add timestamp?
 				if($opts['time'] && strpos($tmp, '.') !== false) {
 					//get file
-					$file = $this->config->baseDir . '/' . $tmp;
+					$file = $this->config('baseDir') . '/' . $tmp;
 					//file exists?
 					if(is_file($file)) {
 						$path .= (strpos($path, '?') !== false ? '&' : '?') . filemtime($file);
@@ -677,9 +666,9 @@ namespace Codi0\Prototypr {
 			$isRunning = $this->cache('cron-running');
 			$next = $this->cron ? array_keys($this->cron)[0] : 0;
 			//is cmd line?
-			if(!$this->run && !$job) {
-				$this->config->webCron = false;
-				$this->config->router = false;
+			if(!$this->_run && !$job) {
+				$this->config('webCron', false);
+				$this->config('router', false);
 			}
 			//has cron?
 			if(!$this->cron) {
@@ -693,10 +682,10 @@ namespace Codi0\Prototypr {
 					$this->cache('cron-running', null);
 				}
 				//check web cron?
-				if($this->config->webCron && !isset($_GET['cron'])) {
+				if($this->config('webCron') && !isset($_GET['cron'])) {
 					//call now?
 					if($next <= time() && !$isRunning) {
-						$url = $this->config->baseUrl . '?cron=' . time();
+						$url = $this->config('baseUrl') . '?cron=' . time();
 						$this->http($url, [ 'blocking' => false ]);
 					}
 					//stop
@@ -739,21 +728,21 @@ namespace Codi0\Prototypr {
 
 		public function run() {
 			//has run?
-			if($this->run) {
+			if($this->_run) {
 				return;
 			}
 			//update flag
-			$this->run = true;
+			$this->_run = true;
 			//use web cron?
-			if($this->config->webCron) {
+			if($this->config('webCron')) {
 				$this->cron();
 			}
 			//use router?
-			if($this->routes && $this->config->router && !isset($_GET['cron']) && !ob_get_contents()) {
+			if($this->routes && $this->config('router') && !isset($_GET['cron']) && !ob_get_contents()) {
 				//set vars
 				$found = false;
 				//search for route
-				foreach([ $this->config->pathInfo, '404' ] as $needle) {
+				foreach([ $this->config('pathInfo'), '404' ] as $needle) {
 					//exact match?
 					if(isset($this->routes[$needle])) {
 						$tmp = $this->routes[$needle];
@@ -780,8 +769,8 @@ namespace Codi0\Prototypr {
 							//update flag
 							$found = true;
 							//set config vars
-							$this->config->route = $meta['path'];
-							$this->config->routeParams = $meta['params'];
+							$this->config('route', $meta['path']);
+							$this->config('routeParams', $meta['params']);
 							//call route
 							call_user_func($meta['fn'], $this);
 							//stop

@@ -34,7 +34,7 @@ class View {
 
 	public function template($name, array $data=[]) {
 		//build path
-		$path = $this->app->config->baseDir . '/templates/' . $name . '.php';
+		$path = $this->app->config('baseDir') . '/templates/' . $name . '.php';
 		//file exists?
 		if(!is_file($path)) {
 			throw new \Exception("Template $name not found");
@@ -57,7 +57,7 @@ class View {
 		foreach($parts as $i => $part) {
 			//is config?
 			if(!$i && $part === 'config') {
-				$data = $this->app->config;
+				$data = $this->app->config();
 				continue;
 			}
 			//data exists?

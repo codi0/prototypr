@@ -1,20 +1,11 @@
 <?php
 
-//Init: Load library
-require_once('vendor/Codi0/Prototypr.php');
+//load library
+require_once('vendor/Codi0/Prototypr/App.php');
 
-//Init: Create app
-$app = prototypr([
-	'config' => [],
+//init app
+prototypr([
+	'config' => [
+		'name' => 'Demo App',
+	],
 ]);
-
-//Route: Home
-$app->route('/', function($app) {
-	//load template
-	$app->template('master:home', [
-		'welcome' => 'Hi there!',
-		'meta' => [
-			'title' => 'Prototypr demo',
-		],
-	]);
-});
