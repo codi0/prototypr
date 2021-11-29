@@ -22,6 +22,8 @@ class View {
 	}
 
 	public function tpl($name, array $data=[], $useTheme=false) {
+		//set vars
+		$useTheme = $useTheme && $this->app->config('theme');
 		//path found?
 		if(!$path = $this->app->path($useTheme ? "layout.tpl" : "$name.tpl")) {
 			throw new \Exception($useTheme ? "Theme layout not found" : "Template $name not found");

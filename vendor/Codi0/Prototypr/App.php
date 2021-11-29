@@ -73,8 +73,9 @@ namespace Codi0\Prototypr {
 				'vendorPaths' => [ $baseDir . '/vendor' ],
 				'pathInfo' => trim(str_replace(($baseUri === '/' ? '' : $baseUri), '', $reqUriBase), '/'),
 				'viewClass' => __NAMESPACE__ . '\\View',
+				'modules' => [],
 				'disabledModules' => [],
-				'theme' => 'default',
+				'theme' => 'theme',
 			], $this->config);
 			//error reporting
 			error_reporting(E_ALL);
@@ -121,27 +122,31 @@ namespace Codi0\Prototypr {
 			$this->composer->sync();
 			//start buffer
 			ob_start();
-			//load modules?
-			if(is_dir($this->config('baseDir') . '/modules')) {
-				//create closure
-				$moduleFn = function($file) use($app) {
-					include_once($file);
-				};
-				//loop through modules
-				foreach(glob($this->config('baseDir') . '/modules/*', GLOB_ONLYDIR) as $dir) {
-					//module details
-					$name = basename($dir);
-					$vendor = $dir . '/vendor';
-					$file = $dir . '/module.php';
-					//can load module?
-					if(!in_array($name, $this->config['disabledModules']) && is_file($file)) {
-						//add vendor?
-						if(is_dir($vendor)) {
-							array_unshift($this->config['vendorPaths'], $vendor);
-						}
-						//init module
-						$moduleFn($file);
-					}
+			//create closure
+			$moduleFn = function($file) use($app) {
+				include_once($file);
+			};
+			//loop through modules
+			foreach(glob($this->config('baseDir') . '/modules/*', GLOB_ONLYDIR) as $dir) {
+				//get name
+				$name = basename($dir);
+				//skip module?
+				if(in_array($name, $this->config['disabledModules'])) {
+					continue;
+				}
+				//cache module
+				if($this->config['theme'] === $name) {
+					array_unshift($this->config['modules'], $name);
+				} else {
+					$this->config['modules'][] = $name;
+				}
+				//add vendor dir?
+				if(is_dir($dir . '/vendor')) {
+					array_unshift($this->config['vendorPaths'], $dir . '/vendor');
+				}
+				//bootstrap module?
+				if(is_file($dir . '/module.php')) {
+					$moduleFn($dir . '/module.php');
 				}
 			}
 			//init event
@@ -532,32 +537,31 @@ namespace Codi0\Prototypr {
 		public function path($path='', $relative=false) {
 			//set vars
 			$baseDir = $this->config('baseDir');
+			$paths = array_merge($this->config('modules'), [ $baseDir ]);
+			$exts = [ 'tpl' => 'tpl', 'css' => 'css', 'js' => 'js', 'png' => 'img', 'jpg' => 'img', 'jpeg' => 'img', 'gif' => 'img' ];
 			//is url?
 			if(strpos($path, '://') !== false) {
 				return $path;
 			}
 			//virtual path?
-			if($path && $path[0] !== '/' && !file_exists($path)) {
-				//set vars
-				$base = [ $baseDir ];
-				$find = [ 'tpl' => 'tpl', 'css' => 'css', 'js' => 'js', 'png' => 'img', 'jpg' => 'img', 'jpeg' => 'img', 'gif' => 'img' ];
+			if($path && $path[0] !== '/') {
+				//get file ext
 				$ext = strtolower(pathinfo($path, PATHINFO_EXTENSION));
-				$ext = isset($find[$ext]) ? $find[$ext] : '';
-				//add theme path?
-				if($theme = $this->config('theme')) {
-					array_unshift($base, $baseDir . '/themes/' . $theme);
-					$ext && array_unshift($base, $baseDir . '/themes/' . $theme . '/' . $ext);
-				}
-				//add module path?
-				if($module = $this->config('route.module')) {
-					array_unshift($base, $baseDir . '/modules/' . $module);
-					$ext && array_unshift($base, $baseDir . '/modules/' . $module . '/' . $ext);
-				}
-				//loop through base
-				foreach($base as $b) {
-					//path found?
-					if(file_exists($b . '/' . $path)) {
-						$path = $b . '/' . $path;
+				$ext = isset($exts[$ext]) ? $exts[$ext] : '';
+				//loop through paths
+				foreach($paths as $base) {
+					//add prefix?
+					if(strpos($base, '/') === false) {
+						$base = $baseDir . '/modules/' . $base;
+					}
+					//check base + ext?
+					if($ext && file_exists($base . '/' . $ext . '/' . $path)) {
+						$path = $base . '/' . $ext . '/' . $path;
+						break;
+					}
+					//check base?
+					if(file_exists($base . '/' . $path)) {
+						$path = $base . '/' . $path;
 						break;
 					}
 				}
