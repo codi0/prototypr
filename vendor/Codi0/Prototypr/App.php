@@ -36,9 +36,14 @@ namespace Codi0\Prototypr {
 		private $cron = [];
 		private $routes = [];
 	
-		private $_run = false;
+		private $_hasRun = false;
+		private $_startTime = 0;
+		private $_startMem = 0;
 
 		public function __construct(array $opts=[]) {
+			//debug
+			$this->_startTime = microtime(true);
+			$this->_startMem = memory_get_usage();
 			//set vars
 			$app = $this;
 			$ssl = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS']) ? ($_SERVER['HTTPS'] !== 'off') : (isset($_SERVER['SERVER_PORT']) && $_SERVER['SERVER_PORT'] == 443);
@@ -765,7 +770,7 @@ namespace Codi0\Prototypr {
 			$isRunning = $this->cache('cron-running');
 			$next = $this->cron ? array_keys($this->cron)[0] : 0;
 			//is cmd line?
-			if(!$this->_run && !$job) {
+			if(!$this->_hasRun && !$job) {
 				$this->config('webCron', false);
 				$this->config('router', false);
 			}
@@ -827,11 +832,11 @@ namespace Codi0\Prototypr {
 
 		public function run() {
 			//has run?
-			if($this->_run) {
+			if($this->_hasRun) {
 				return;
 			}
 			//update flag
-			$this->_run = true;
+			$this->_hasRun = true;
 			//use web cron?
 			if($this->config('webCron')) {
 				$this->cron();
@@ -884,12 +889,40 @@ namespace Codi0\Prototypr {
 			}
 			//get final output
 			$output = trim(ob_get_clean());
+			//add debug bar?
+			if($this->config('isDev')) {
+				$output = str_replace('</body>', $this->debug() . "\n" . '</body>', $output);
+			}
 			//filter output?
 			if($output = $this->event('app.output', $output)) {
 				echo $output;
 			}
 			//shutdown event
 			$this->event('app.shutdown');
+		}
+
+		public function debug() {
+			//debug vars
+			$queries = [];
+			$time = number_format(microtime(true) - $this->_startTime, 5);
+			$mem = number_format((memory_get_usage() - $this->_startMem) / 1024, 0);
+			$peak = number_format(memory_get_peak_usage() / 1024, 0);
+			//debug data
+			$debug  = '<div id="debug-bar" style="width:100%; font-size:12px; text-align:left; padding:10px; margin-top:20px; background:#eee; position:fixed; bottom:0;">' . "\n";
+			$debug .= '<div style="margin:0;"><b>Debug bar</b></div>' . "\n";
+			$debug .= '<div style="margin:5px 0 0 0;">Time: ' . $time . 's | Mem: ' . $mem . 'kb | Peak: ' . $peak . 'kb | Queries: ' . count($queries) . '</div>' . "\n";
+			//db queries?
+			if($queries) {
+				$debug .= '<div style="margin:10px 0 0 0;"><b>Database queries</b></div>' . "\n";
+				$debug .= '<ol style="margin:0; padding-left:15px;">' . "\n";
+				foreach($queries as $q) {
+					$debug .= '<li style="margin-top:5px;">' . $q . '</li>' . "\n";
+				}
+				$debug .= '</ol>' . "\n";
+			}
+			$debug .= '</div>' . "\n";
+			//return
+			return $debug;
 		}
 
 	}
