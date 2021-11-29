@@ -3,7 +3,7 @@
 //Route: Home
 $app->route('/', function($app) {
 	//load template
-	$app->template('master:home', [
+	$app->tpl('home', [
 		'welcome' => 'Hi there!',
 		'meta' => [
 			'title' => 'Prototypr demo',

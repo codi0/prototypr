@@ -7,23 +7,12 @@ class View {
 	private $app;
 	private $data = [];
 
-	public function __construct($app) {
+	public function __construct($app, $useTheme=true) {
 		$this->app = $app;
+		$this->useTheme = (bool) $useTheme;
 	}
 
 	public function __call($method, array $args=[]) {
-		//is url?
-		if($method === 'url') {
-			//format args
-			$args = array(
-				0 => isset($args[0]) ? $args[0] : '',
-				1 => array_merge([ 'time' => true ], (isset($args[1]) ? $args[1] : [])),
-			);
-		}
-		//allowed app method?
-		if(in_array($method, [ 'url', 'clean', 'event' ])) {
-			return call_user_func_array([ $this->app, $method ], $args);
-		}
 		//helper method?
 		if($helper = $this->app->helper($method)) {
 			return call_user_func_array($helper, $args);
@@ -32,15 +21,15 @@ class View {
 		throw new \Exception("Template helper method not found: $method");
 	}
 
-	public function template($name, array $data=[]) {
-		//build path
-		$path = $this->app->config('baseDir') . '/templates/' . $name . '.php';
-		//file exists?
-		if(!is_file($path)) {
-			throw new \Exception("Template $name not found");
+	public function tpl($name, array $data=[], $useTheme=false) {
+		//path found?
+		if(!$path = $this->app->path($useTheme ? "layout.tpl" : "$name.tpl")) {
+			throw new \Exception($useTheme ? "Theme layout not found" : "Template $name not found");
 		}
 		//merge data
 		$this->data = array_merge($this->data, $data);
+		//set template path
+		$this->data['template'] = $name;
 		//view closure
 		$fn = function($__path, $tpl) {
 			include($__path);
@@ -79,10 +68,24 @@ class View {
 		}
 		//clean data?
 		if($data) {
-			$data = $this->app->clean($data, $clean);
+			$data = $this->clean($data, $clean);
 		}
 		//return
 		return $data;
+	}
+
+	public function url($url='', $opts=[]) {
+		//default opts
+		$opts = array_merge([
+			'time' => true,
+		], $opts);
+		//return
+		return $this->app->url($url, $opts);
+	}
+
+	public function clean($value, $type='html') {
+		return $this->app->clean($value, $type);
+	
 	}
 
 }

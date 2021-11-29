@@ -1,10 +1,10 @@
 <?php
 
-//load library
+//load lib
 require_once('vendor/Codi0/Prototypr/App.php');
 
 //init app
-prototypr([
+return prototypr([
 	'config' => [
 		'name' => 'Demo App',
 	],

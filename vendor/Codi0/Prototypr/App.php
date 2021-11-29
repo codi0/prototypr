@@ -53,15 +53,6 @@ namespace Codi0\Prototypr {
 					$this->$k = $v;
 				}
 			}
-			//default file loader
-			spl_autoload_register(function($class) {
-				//format path
-				$path = dirname(dirname(__DIR__)) . '/' . str_replace('\\', '/', $class) . '.php';
-				//file exists?
-				if(is_file($path)) {
-					require($path);
-				}
-			});
 			//set config defaults
 			$this->config = array_merge([
 				'isDev' => true,
@@ -74,9 +65,11 @@ namespace Codi0\Prototypr {
 				'url' => $host . $reqUri,
 				'baseUrl' => $host . str_replace('//', '/', '/' . trim($baseUri, '/') . '/'),
 				'baseDir' => $baseDir,
+				'vendorPaths' => [ $baseDir . '/vendor' ],
 				'pathInfo' => trim(str_replace(($baseUri === '/' ? '' : $baseUri), '', $reqUriBase), '/'),
-				'configClass' => __NAMESPACE__ . '\\Config',
 				'viewClass' => __NAMESPACE__ . '\\View',
+				'disabledModules' => [],
+				'theme' => 'default',
 			], $this->config);
 			//error reporting
 			error_reporting(E_ALL);
@@ -92,8 +85,21 @@ namespace Codi0\Prototypr {
 			//fatal error handler
 			register_shutdown_function(function() use($app) {
 				$error = error_get_last();
-				if($error && $error['type'] == E_ERROR) {
+				$levels = [ E_ERROR, E_CORE_ERROR ];
+				if($error && in_array($error['type'], $levels)) {
 					$app->logException(new \ErrorException($error['message'], 0, $error['type'], $error['file'], $error['line']));
+				}
+			});
+			//default file loader
+			spl_autoload_register(function($class) use($app) {
+				//loop through paths
+				foreach($app->config('vendorPaths') as $path) {
+					//get file path
+					$file = $path . '/' . str_replace('\\', '/', $class) . '.php';
+					//file exists?
+					if(is_file($file)) {
+						require($file);
+					}
 				}
 			});
 			//default services
@@ -116,9 +122,19 @@ namespace Codi0\Prototypr {
 				$moduleFn = function($file) use($app) {
 					include_once($file);
 				};
-				//loop through module files
-				foreach(new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($this->config('baseDir') . '/modules')) as $file) {
-					if(preg_match('/module\.php$/', $file)) {
+				//loop through modules
+				foreach(glob($this->config('baseDir') . '/modules/*', GLOB_ONLYDIR) as $dir) {
+					//module details
+					$name = basename($dir);
+					$vendor = $dir . '/vendor';
+					$file = $dir . '/module.php';
+					//can load module?
+					if(!in_array($name, $this->config['disabledModules']) && is_file($file)) {
+						//add vendor?
+						if(is_dir($vendor)) {
+							array_unshift($this->config['vendorPaths'], $vendor);
+						}
+						//init module
 						$moduleFn($file);
 					}
 				}
@@ -172,16 +188,40 @@ namespace Codi0\Prototypr {
 		}
 
 		public function config($key=null, $val='%%null%%') {
-			//get config array?
-			if($key === null) {
-				return $this->config;
-			}
+			//set vars
+			$tmp = $this->config;
+			$parts = $key ? explode('.', $key) : [];
 			//set config item?
-			if($val !== '%%null%%') {
-				$this->config[$key] = $val;
+			if($parts && $val !== '%%null%%') {
+				//set vars
+				$c =& $this->config;
+				//loop through parts
+				foreach($parts as $k => $v) {
+					if($k+1 < count($parts)) {
+						$c[$v] = [];
+						$c =& $c[$v];
+					} else {
+						$c[$v] = $val;
+					}
+				}
 			}
-			//get config item
-			return isset($this->config[$key]) ? $this->config[$key] : null;
+			//loop through parts
+			foreach($parts as $k => $v) {
+				//is array?
+				if(is_array($tmp) && isset($tmp[$v])) {
+					$tmp = $tmp[$v];
+					continue;
+				}
+				//is object?
+				if(is_object($tmp) && isset($tmp->$v)) {
+					$tmp = $tmp->$v;
+					continue;
+				}
+				//failed
+				return null;
+			}
+			//return
+			return $tmp;
 		}
 
 		public function service($name, $obj='%%null%%') {
@@ -256,8 +296,10 @@ namespace Codi0\Prototypr {
 		}
 
 		public function route($name, $methods, $callable=null) {
-			//format name
+			//set vars
+			$module = '';
 			$name = trim($name, '/') ?: '';
+			$src = array_reverse(get_included_files())[0];
 			//is callable?
 			if(is_callable($methods)) {
 				$callable = $methods;
@@ -267,9 +309,15 @@ namespace Codi0\Prototypr {
 			if(!is_array($methods)) {
 				$methods = $methods ? explode('|', $methods) : [];
 			}
+			//has module?
+			if(strpos($src, '/modules/') !== false) {
+				$module = explode('/modules/', $src)[1];
+				$module = explode('/', $module)[0];
+			}
 			//add route
 			$this->routes[$name] = [
 				'methods' => array_map('strtoupper', $methods),
+				'module' => $module,
 				'fn' => $callable,
 			];
 			//return
@@ -384,7 +432,14 @@ namespace Codi0\Prototypr {
 			if(is_array($value) || is_object($value)) {
 				//loop through array
 				foreach($value as $k => $v) {
-					$value[$k] = $this->clean($v, $context);
+					//clean value
+					$v = $this->clean($v, $context);
+					//is object?
+					if(is_object($value)) {
+						$value->$k = $v;
+					} else {
+						$value[$k] = $v;
+					}
 				}
 				//return
 				return $value;
@@ -431,26 +486,19 @@ namespace Codi0\Prototypr {
 			return $value;
 		}
 
-		public function template($name, array $data=[]) {
+		public function tpl($name, array $data=[]) {
 			//set defaults
 			$data = array_merge([
 				'js' => [],
 				'meta' => [],
-				'template' => '',
 			], $data);
-			//has layout?
-			if(strpos($name, ':') !== false) {
-				list($name, $tmp) = explode(':', $name, 2);
-				$name = 'layouts/' . $name;
-				$data['template'] = $tmp;
-			}
 			//loop through default config vars
-			foreach([ 'baseUrl', 'isDev', 'app', 'route' ] as $param) {
+			foreach([ 'baseUrl', 'isDev', 'app', 'route.path' ] as $param) {
 				//get value
 				$val = $this->config($param);
 				//set value?
 				if($val !== null) {
-					$data['js'][$param] = $val;
+					$data['js'][explode('.', $param)[0]] = $val;
 				}
 			}
 			//has noindex?
@@ -461,9 +509,9 @@ namespace Codi0\Prototypr {
 			ob_start();
 			//init
 			$cls = $this->config('viewClass');
-			$tpl = new $cls($this);
-			//load template
-			$tpl->template($name, $data);
+			$view = new $cls($this);
+			//load view
+			$view->tpl($name, $data, true);
 			//get html;
 			$html = ob_get_clean();
 			//add js vars?
@@ -476,6 +524,56 @@ namespace Codi0\Prototypr {
 			echo $html;
 		}
 
+		public function path($path='', $relative=false) {
+			//set vars
+			$baseDir = $this->config('baseDir');
+			//is url?
+			if(strpos($path, '://') !== false) {
+				return $path;
+			}
+			//virtual path?
+			if($path && $path[0] !== '/' && !file_exists($path)) {
+				//set vars
+				$base = [ $baseDir ];
+				$find = [ 'tpl' => 'tpl', 'css' => 'css', 'js' => 'js', 'png' => 'img', 'jpg' => 'img', 'jpeg' => 'img', 'gif' => 'img' ];
+				$ext = strtolower(pathinfo($path, PATHINFO_EXTENSION));
+				$ext = isset($find[$ext]) ? $find[$ext] : '';
+				//add theme path?
+				if($theme = $this->config('theme')) {
+					array_unshift($base, $baseDir . '/themes/' . $theme);
+					$ext && array_unshift($base, $baseDir . '/themes/' . $theme . '/' . $ext);
+				}
+				//add module path?
+				if($module = $this->config('route.module')) {
+					array_unshift($base, $baseDir . '/modules/' . $module);
+					$ext && array_unshift($base, $baseDir . '/modules/' . $module . '/' . $ext);
+				}
+				//loop through base
+				foreach($base as $b) {
+					//path found?
+					if(file_exists($b . '/' . $path)) {
+						$path = $b . '/' . $path;
+						break;
+					}
+				}
+			}
+			//is empty?
+			if(empty($path)) {
+				$path = $baseDir;
+			}
+			//stop here?
+			if(!file_exists($path)) {
+				return null;
+			}
+			//is relative?
+			if($relative) {
+				$path = str_replace($baseDir, '', $path);
+				$path = ltrim($path, '/');
+			}
+			//return
+			return $path;
+		}
+
 		public function url($path='', array $opts=[]) {
 			//default opts
 			$opts = array_merge([
@@ -483,7 +581,8 @@ namespace Codi0\Prototypr {
 				'query' => true,
 				'clean' => '',
 			], $opts);
-			//set path
+			//format path
+			$path = $this->path($path, true);
 			$path = trim($path ?: $this->config('url'));
 			//remove query string?
 			if(!$opts['query']) {
@@ -768,9 +867,8 @@ namespace Codi0\Prototypr {
 						if($meta = $this->event('app.route', $meta)) {
 							//update flag
 							$found = true;
-							//set config vars
-							$this->config('route', $meta['path']);
-							$this->config('routeParams', $meta['params']);
+							//update config
+							$this->config('route', (object) $meta);
 							//call route
 							call_user_func($meta['fn'], $this);
 							//stop

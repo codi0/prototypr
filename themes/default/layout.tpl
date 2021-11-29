@@ -15,13 +15,13 @@
 	<link rel="manifest" href="<?= $tpl->url('manifest.json') ?>">
 	<link rel="icon" href="<?= $tpl->url('favicon.png') ?>">
 	<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/codi0/fstage@0.2.3/fstage.min.css">
-	<link rel="stylesheet" href="<?= $tpl->url('assets/app.css') ?>">
+	<link rel="stylesheet" href="<?= $tpl->url('app.css') ?>">
 	<script defer src="https://cdn.jsdelivr.net/gh/codi0/fstage@0.2.3/fstage.min.js"></script>
-	<script defer src="<?= $tpl->url('assets/app.js') ?>"></script>
+	<script defer src="<?= $tpl->url('app.js') ?>"></script>
 </head>
-<body class="page <?= str_replace([ '_', '-' ], ' ', $tpl->data('template')) ?>">
+<body class="page <?= str_replace([ '_', '-', '/' ], ' ', $tpl->data('template')) ?>">
 	<div id="app">
-		<?php $tpl->template($tpl->data('template')) ?>
+		<?php $tpl->tpl($tpl->data('template')) ?>
 	</div>
 </body>
 </html>
