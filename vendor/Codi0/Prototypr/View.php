@@ -7,9 +7,8 @@ class View {
 	private $app;
 	private $data = [];
 
-	public function __construct($app, $useTheme=true) {
+	public function __construct($app) {
 		$this->app = $app;
-		$this->useTheme = (bool) $useTheme;
 	}
 
 	public function __call($method, array $args=[]) {
@@ -24,14 +23,21 @@ class View {
 	public function tpl($name, array $data=[], $useTheme=false) {
 		//set vars
 		$useTheme = $useTheme && $this->app->config('theme');
+		$tplPath = $useTheme ? 'layout' : $name;
+		//add default ext?
+		if(strpos($tplPath, '.') === false) {
+			$tplPath .= '.tpl';
+		}
 		//path found?
-		if(!$path = $this->app->path($useTheme ? "layout.tpl" : "$name.tpl")) {
+		if(!$path = $this->app->path($tplPath)) {
 			throw new \Exception($useTheme ? "Theme layout not found" : "Template $name not found");
 		}
 		//merge data
 		$this->data = array_merge($this->data, $data);
-		//set template path
-		$this->data['template'] = $name;
+		//set template path?
+		if(!isset($this->data['template'])) {
+			$this->data['template'] = $name;
+		}
 		//view closure
 		$fn = function($__path, $tpl) {
 			include($__path);

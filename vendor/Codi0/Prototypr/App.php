@@ -64,17 +64,21 @@ namespace Codi0\Prototypr {
 				'autoRun' => true,
 				'webCron' => true,
 				'router' => true,
-				'composer' => [],
+				'baseDir' => $baseDir,
+				'cacheDir' => $baseDir . '/data/cache',
+				'logsDir' => $baseDir . '/data/logs',
+				'schemasDir' => $baseDir . '/data/schemas',
+				'modulesDir' => $baseDir . '/modules',
+				'vendorDirs' => [ $baseDir . '/vendor' ],
 				'ssl' => $ssl,
 				'host' => $host,
 				'url' => $host . $reqUri,
 				'baseUrl' => $host . str_replace('//', '/', '/' . trim($baseUri, '/') . '/'),
-				'baseDir' => $baseDir,
-				'vendorPaths' => [ $baseDir . '/vendor' ],
 				'pathInfo' => trim(str_replace(($baseUri === '/' ? '' : $baseUri), '', $reqUriBase), '/'),
-				'viewClass' => __NAMESPACE__ . '\\View',
+				'composer' => [],
 				'modules' => [],
-				'disabledModules' => [],
+				'moduleLoading' => '',
+				'modulesDisabled' => [],
 				'theme' => 'theme',
 			], $this->config);
 			//error reporting
@@ -90,16 +94,17 @@ namespace Codi0\Prototypr {
 			});
 			//fatal error handler
 			register_shutdown_function(function() use($app) {
+				//get last error
 				$error = error_get_last();
-				$levels = [ E_ERROR, E_CORE_ERROR ];
-				if($error && in_array($error['type'], $levels)) {
+				//log exception?
+				if($error && in_array($error['type'], [ E_ERROR, E_CORE_ERROR ])) {
 					$app->logException(new \ErrorException($error['message'], 0, $error['type'], $error['file'], $error['line']));
 				}
 			});
 			//default file loader
 			spl_autoload_register(function($class) use($app) {
 				//loop through paths
-				foreach($app->config('vendorPaths') as $path) {
+				foreach($app->config('vendorDirs') as $path) {
 					//get file path
 					$file = $path . '/' . str_replace('\\', '/', $class) . '.php';
 					//file exists?
@@ -114,9 +119,10 @@ namespace Codi0\Prototypr {
 					return new Composer(array_merge([ 'baseDir' => $app->config('baseDir') ], $app->config('composer')));
 				},
 				'db' => function($app) {
+					$driver = $app->config('dbDriver') ?: 'mysql';
 					$host = $app->config('dbHost') ?: 'localhost';
-					return new \PDO('mysql:host=' . $host . ';dbname=' . $app->config('dbName'), $app->config('dbUser'), $app->config('dbPass'));
-				}
+					return new Db($driver . ':host=' . $host . ';dbname=' . $app->config('dbName'), $app->config('dbUser'), $app->config('dbPass'));
+				},
 			], $this->services);
 			//sync composer
 			$this->composer->sync();
@@ -127,14 +133,17 @@ namespace Codi0\Prototypr {
 				include_once($file);
 			};
 			//loop through modules
-			foreach(glob($this->config('baseDir') . '/modules/*', GLOB_ONLYDIR) as $dir) {
-				//get name
+			foreach(glob($this->config('modulesDir') . '/*', GLOB_ONLYDIR) as $dir) {
+				//set vars
+				$app = $this;
 				$name = basename($dir);
 				//skip module?
-				if(in_array($name, $this->config['disabledModules'])) {
+				if(in_array($name, $this->config['modulesDisabled'])) {
 					continue;
 				}
-				//cache module
+				//mark loading
+				$this->config['moduleLoading'] = $name;
+				//remember module
 				if($this->config['theme'] === $name) {
 					array_unshift($this->config['modules'], $name);
 				} else {
@@ -142,12 +151,14 @@ namespace Codi0\Prototypr {
 				}
 				//add vendor dir?
 				if(is_dir($dir . '/vendor')) {
-					array_unshift($this->config['vendorPaths'], $dir . '/vendor');
+					array_unshift($this->config['vendorDirs'], $dir . '/vendor');
 				}
 				//bootstrap module?
 				if(is_file($dir . '/module.php')) {
 					$moduleFn($dir . '/module.php');
 				}
+				//cancel loading
+				$this->config['moduleLoading'] = '';
 			}
 			//init event
 			$this->event('app.init');
@@ -155,6 +166,10 @@ namespace Codi0\Prototypr {
 			if($newV = $this->config('version')) {
 				//get cached version
 				$oldV = $this->cache('version');
+				//sync global db schemas
+				foreach(glob($this->config('schemasDir') . '/*.sql') as $file) {
+					$this->loadSchema($file);
+				}
 				//new version found?
 				if(!$oldV || $newV > $oldV) {
 					$this->event('app.upgrade', [ 'from' => $oldV, 'to' => $newV ]);
@@ -166,7 +181,11 @@ namespace Codi0\Prototypr {
 		public function __destruct() {
 			//auto-run?
 			if($this->config('autoRun')) {
-				$this->run();
+				try {
+					$this->run();
+				} catch(\Exception $e) {
+					$this->logException($e);
+				}
 			}
 		}
 
@@ -238,6 +257,7 @@ namespace Codi0\Prototypr {
 			//set service?
 			if($obj !== '%%null%%') {
 				$this->services[$name] = $obj;
+				return $obj;
 			}
 			//has service?
 			if(!isset($this->services[$name])) {
@@ -297,7 +317,7 @@ namespace Codi0\Prototypr {
 					break;
 				}
 				//update params?
-				if($res) {
+				if($res !== null) {
 					$params = $res;
 				}
 			}
@@ -309,7 +329,6 @@ namespace Codi0\Prototypr {
 			//set vars
 			$module = '';
 			$name = trim($name, '/') ?: '';
-			$src = array_reverse(get_included_files())[0];
 			//is callable?
 			if(is_callable($methods)) {
 				$callable = $methods;
@@ -319,15 +338,10 @@ namespace Codi0\Prototypr {
 			if(!is_array($methods)) {
 				$methods = $methods ? explode('|', $methods) : [];
 			}
-			//has module?
-			if(strpos($src, '/modules/') !== false) {
-				$module = explode('/modules/', $src)[1];
-				$module = explode('/', $module)[0];
-			}
 			//add route
 			$this->routes[$name] = [
 				'methods' => array_map('strtoupper', $methods),
-				'module' => $module,
+				'module' => $this->config('moduleLoading'),
 				'fn' => $callable,
 			];
 			//return
@@ -340,7 +354,7 @@ namespace Codi0\Prototypr {
 			$closure = ($data instanceof \Closure);
 			//add path?
 			if(strpos($path, '/') === false) {
-				$path = $this->config('baseDir') . '/cache/' . $path;
+				$path = $this->config('cacheDir') . '/' . $path;
 			}
 			//add ext?
 			if(strpos($path, '.') === false) {
@@ -381,37 +395,7 @@ namespace Codi0\Prototypr {
 		}
 
 		public function log($name, $data='%%null%%') {
-			return $this->cache($this->config('baseDir') . "/logs/{$name}.log", $data, true);	
-		}
-
-		public function logException($e, $display=true) {
-			//set vars
-			$severity = '';
-			//get severity?
-			if(method_exists($e, 'getSeverity')) {
-				$names = [];
-				$severity = $e->getSeverity();
-				$consts = array_flip(array_slice(get_defined_constants(true)['Core'], 0, 15, true));
-				foreach($consts as $code => $name) {
-					if($severity & $code) {
-						$names[] = $name;
-					}
-				}
-				$severity = implode(', ', $names);
-			}
-			//summarise error
-			$message = "Error: " . ($severity ? $severity : get_class($e)) . "\nMessage: {$e->getMessage()}\nFile: {$e->getFile()} (line {$e->getLine()})\n";
-			//log error
-			$this->log('errors', "[" . date('Y-m-d H:i:s') . "]\n" . $message);
-			//display error?
-			if($display && $this->config('isDev')) {
-				//create html
-				$html = '<div class="error" style="margin:1em 0; padding: 0.5em; border:1px red solid;">' . str_replace("\n", "\n<br>\n", $message) . '</div>' . "\n";
-				//display html?
-				if($res = $this->event('app.error', $html)) {
-					echo $res;
-				}
-			}
+			return $this->cache($this->config('logsDir') . "/{$name}.log", $data, true);	
 		}
 
 		public function input($key, $clean='html') {
@@ -517,10 +501,8 @@ namespace Codi0\Prototypr {
 			}
 			//buffer
 			ob_start();
-			//init
-			$cls = $this->config('viewClass');
-			$view = new $cls($this);
 			//load view
+			$view = new View($this);
 			$view->tpl($name, $data, true);
 			//get html;
 			$html = ob_get_clean();
@@ -534,11 +516,17 @@ namespace Codi0\Prototypr {
 			echo $html;
 		}
 
-		public function path($path='', $relative=false) {
+		public function path($path='', array $opts=[]) {
 			//set vars
 			$baseDir = $this->config('baseDir');
-			$paths = array_merge($this->config('modules'), [ $baseDir ]);
-			$exts = [ 'tpl' => 'tpl', 'css' => 'css', 'js' => 'js', 'png' => 'img', 'jpg' => 'img', 'jpeg' => 'img', 'gif' => 'img' ];
+			$modulesDir = $this->config('modulesDir');
+			$checkPaths = array_merge($this->config('modules'), [ $baseDir ]);
+			$checkExts = [ 'tpl' => 'tpl', 'css' => 'css', 'js' => 'js', 'png' => 'img', 'jpg' => 'img', 'jpeg' => 'img', 'gif' => 'img' ];
+			//default opts
+			$opts = array_merge([
+				'relative' => false,
+				'validate' => true,
+			], $opts);
 			//is url?
 			if(strpos($path, '://') !== false) {
 				return $path;
@@ -547,12 +535,12 @@ namespace Codi0\Prototypr {
 			if($path && $path[0] !== '/') {
 				//get file ext
 				$ext = strtolower(pathinfo($path, PATHINFO_EXTENSION));
-				$ext = isset($exts[$ext]) ? $exts[$ext] : '';
+				$ext = isset($checkExts[$ext]) ? $checkExts[$ext] : '';
 				//loop through paths
-				foreach($paths as $base) {
+				foreach($checkPaths as $base) {
 					//add prefix?
 					if(strpos($base, '/') === false) {
-						$base = $baseDir . '/modules/' . $base;
+						$base = $modulesDir . '/' . $base;
 					}
 					//check base + ext?
 					if($ext && file_exists($base . '/' . $ext . '/' . $path)) {
@@ -570,12 +558,12 @@ namespace Codi0\Prototypr {
 			if(empty($path)) {
 				$path = $baseDir;
 			}
-			//stop here?
-			if(!file_exists($path)) {
+			//is valid?
+			if($opts['validate'] && !file_exists($path)) {
 				return null;
 			}
 			//is relative?
-			if($relative) {
+			if($opts['relative']) {
 				$path = str_replace($baseDir, '', $path);
 				$path = ltrim($path, '/');
 			}
@@ -591,7 +579,7 @@ namespace Codi0\Prototypr {
 				'clean' => '',
 			], $opts);
 			//format path
-			$path = $this->path($path, true);
+			$path = $this->path($path, [ 'validate' => false, 'relative' => true ]);
 			$path = trim($path ?: $this->config('url'));
 			//remove query string?
 			if(!$opts['query']) {
@@ -911,22 +899,62 @@ namespace Codi0\Prototypr {
 			$time = number_format(microtime(true) - $this->_startTime, 5);
 			$mem = number_format((memory_get_usage() - $this->_startMem) / 1024, 0);
 			$peak = number_format(memory_get_peak_usage() / 1024, 0);
+			//load queries?
+			if(!($this->services['db'] instanceOf \Closure)) {
+				$queries = $this->db->getLog();
+			}
 			//debug data
 			$debug  = '<div id="debug-bar" style="width:100%; font-size:12px; text-align:left; padding:10px; margin-top:20px; background:#eee; position:fixed; bottom:0;">' . "\n";
-			$debug .= '<div style="margin:0;"><b>Debug bar</b></div>' . "\n";
-			$debug .= '<div style="margin:5px 0 0 0;">Time: ' . $time . 's | Mem: ' . $mem . 'kb | Peak: ' . $peak . 'kb | Queries: ' . count($queries) . '</div>' . "\n";
+			$debug .= '<div><b>Debug:</b> Time: ' . $time . 's | Mem: ' . $mem . 'kb | Peak: ' . $peak . 'kb | Queries: ' . count($queries) . '</div>' . "\n";
 			//db queries?
 			if($queries) {
-				$debug .= '<div style="margin:10px 0 0 0;"><b>Database queries</b></div>' . "\n";
-				$debug .= '<ol style="margin:0; padding-left:15px;">' . "\n";
+				$debug .= '<ol style="margin:10px 0 0 0; padding-left:15px;">' . "\n";
 				foreach($queries as $q) {
-					$debug .= '<li style="margin-top:5px;">' . $q . '</li>' . "\n";
+					$debug .= '<li style="margin-top:3px;">' . $q . '</li>' . "\n";
 				}
 				$debug .= '</ol>' . "\n";
 			}
 			$debug .= '</div>' . "\n";
 			//return
 			return $debug;
+		}
+
+		public function logException($e, $display=true) {
+			//set vars
+			$severity = '';
+			//get severity?
+			if(method_exists($e, 'getSeverity')) {
+				$names = [];
+				$severity = $e->getSeverity();
+				$consts = array_flip(array_slice(get_defined_constants(true)['Core'], 0, 15, true));
+				foreach($consts as $code => $name) {
+					if($severity & $code) {
+						$names[] = $name;
+					}
+				}
+				$severity = implode(', ', $names);
+			}
+			//error parts
+			$error = [
+				'date' => date('Y-m-d H:i:s'),
+				'type' => $severity ? $severity : get_class($e),
+				'message' => $e->getMessage(),
+				'line' => $e->getLine(),
+				'file' => $e->getFile(),
+				'display' => $display,
+			];
+			//skip error?
+			if(!$error = $this->event('app.error', $error)) {
+				return;
+			}
+			//meta data
+			$meta = $error['type'] . " | " . str_replace($this->config('baseDir') . '/', '', $error['file']) . " | line " . $error['line'];
+			//log error
+			$this->log('errors', "[" . $error['date'] . "]\n" . $meta . "\n" . $error['message'] . "\n");
+			//display error?
+			if($error['display'] && $this->config('isDev')) {
+				echo '<div class="error" style="margin:1em 0; padding: 0.5em; border:1px red solid;">' . $meta . '<br><br>' . $error['message'] . '</div>' . "\n";
+			}
 		}
 
 	}

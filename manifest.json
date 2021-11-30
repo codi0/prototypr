@@ -11,7 +11,7 @@
 	"background_color": "#fff",
 	"icons": [
 		{
-			"src": "favicon.png",
+			"src": "modules/theme/img/favicon.png",
 			"type": "image/png",
 			"sizes": "512x512"
 		}
