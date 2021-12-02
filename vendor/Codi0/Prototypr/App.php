@@ -60,10 +60,10 @@ namespace Codi0\Prototypr {
 			}
 			//set config defaults
 			$this->config = array_merge([
-				'isDev' => true,
 				'autoRun' => true,
 				'webCron' => true,
 				'router' => true,
+				'env' => 'dev',
 				'baseDir' => $baseDir,
 				'cacheDir' => $baseDir . '/data/cache',
 				'logsDir' => $baseDir . '/data/logs',
@@ -81,6 +81,10 @@ namespace Codi0\Prototypr {
 				'modulesDisabled' => [],
 				'theme' => 'theme',
 			], $this->config);
+			//merge env config?
+			if(isset($opts["config." . $this->config['env']])) {
+				$this->config = array_merge($this->config, $opts["config." . $this->config['env']]);
+			}
 			//error reporting
 			error_reporting(E_ALL);
 			ini_set('log_errors', 0);
@@ -487,7 +491,7 @@ namespace Codi0\Prototypr {
 				'meta' => [],
 			], $data);
 			//loop through default config vars
-			foreach([ 'baseUrl', 'isDev', 'app', 'route.path' ] as $param) {
+			foreach([ 'baseUrl', 'env', 'app', 'route.path' ] as $param) {
 				//get value
 				$val = $this->config($param);
 				//set value?
@@ -496,8 +500,8 @@ namespace Codi0\Prototypr {
 				}
 			}
 			//has noindex?
-			if(!isset($data['meta']['noindex']) && $this->config('isDev')) {
-				$data['meta']['noindex'] = $this->config('isDev');
+			if(!isset($data['meta']['noindex']) && $this->config('env') !== 'prod') {
+				$data['meta']['noindex'] = true;
 			}
 			//buffer
 			ob_start();
@@ -882,7 +886,7 @@ namespace Codi0\Prototypr {
 			//get final output
 			$output = trim(ob_get_clean());
 			//add debug bar?
-			if($this->config('isDev')) {
+			if($this->config('env') === 'dev') {
 				$output = str_replace('</body>', $this->debug() . "\n" . '</body>', $output);
 			}
 			//filter output?
@@ -900,7 +904,7 @@ namespace Codi0\Prototypr {
 			$mem = number_format((memory_get_usage() - $this->_startMem) / 1024, 0);
 			$peak = number_format(memory_get_peak_usage() / 1024, 0);
 			//load queries?
-			if(!($this->services['db'] instanceOf \Closure)) {
+			if(isset($this->services['db']) && !($this->services['db'] instanceOf \Closure)) {
 				$queries = $this->db->getLog();
 			}
 			//debug data
@@ -952,7 +956,7 @@ namespace Codi0\Prototypr {
 			//log error
 			$this->log('errors', "[" . $error['date'] . "]\n" . $meta . "\n" . $error['message'] . "\n");
 			//display error?
-			if($error['display'] && $this->config('isDev')) {
+			if($error['display'] && $this->config('env') === 'dev') {
 				echo '<div class="error" style="margin:1em 0; padding: 0.5em; border:1px red solid;">' . $meta . '<br><br>' . $error['message'] . '</div>' . "\n";
 			}
 		}
