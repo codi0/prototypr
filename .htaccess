@@ -28,18 +28,14 @@ Allow from all
 
 	# Force SSL?
 	<ifModule mod_ssl.c>
-		RewriteCond %{HTTPS} off
-		RewriteRule .* https://%{HTTP_HOST}%{REQUEST_URI} [R=301,L] 
+	#	RewriteCond %{HTTPS} off
+	#	RewriteRule .* https://%{HTTP_HOST}%{REQUEST_URI} [R=301,L] 
 	</IfModule>
 
-	# Deny access to protected files
-	RewriteCond %{THE_REQUEST} composer [OR]
-	RewriteCond %{THE_REQUEST} \.(cache|conf|htaccess|html|log|keep|php|phtml|sql|tpl)
-	RewriteRule .* - [R=404,L]
-
 	# Route through index.php
-	RewriteCond %{REQUEST_FILENAME} !-d
-	RewriteCond %{REQUEST_FILENAME} !-f
+	# Deny direct file access to non-assets
+	RewriteCond %{REQUEST_FILENAME} !-f [OR]
+	RewriteCond %{REQUEST_FILENAME} !(/index.php$)|(/assets/)
 	RewriteRule (.*) index.php/$1 [L]
 
 </IfModule>

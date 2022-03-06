@@ -1,9 +1,9 @@
 <?php
 
 //Route: Home
-$app->route('/', function($app) {
+$this->route('/', function() {
 	//load template
-	$app->tpl('home', [
+	$this->tpl('home', [
 		'welcome' => 'Hi there!',
 		'meta' => [
 			'title' => 'Prototypr demo',

@@ -29,61 +29,131 @@ namespace Codi0\Prototypr {
 
 	class App {
 
+		private $_hasRun = false;
+		private $_startTime = 0;
+		private $_startMem = 0;
+
 		private $config = [];
 		private $helpers = [];
 		private $services = [];
 		private $events = [];
 		private $cron = [];
 		private $routes = [];
-	
-		private $_hasRun = false;
-		private $_startTime = 0;
-		private $_startMem = 0;
+
+		private $envs = [
+			'dev',
+			'qa',
+			'staging',
+			'prod',
+		];
+
+		private $httpMessages = [
+			200 => 'Ok',
+			400 => 'Bad Request',
+			401 => 'Unauthorized',
+			403 => 'Forbidden', 
+			404 => 'Not Found',
+			500 => 'Internal Server Error',
+		];
 
 		public function __construct(array $opts=[]) {
-			//debug
+			//debug vars
 			$this->_startTime = microtime(true);
 			$this->_startMem = memory_get_usage();
-			//set vars
-			$app = $this;
-			$ssl = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS']) ? ($_SERVER['HTTPS'] !== 'off') : (isset($_SERVER['SERVER_PORT']) && $_SERVER['SERVER_PORT'] == 443);
-			$host = (isset($_SERVER['HTTP_HOST']) && $_SERVER['HTTP_HOST']) ? 'http' . ($ssl ? 's' : '') . '://' . $_SERVER['HTTP_HOST'] : '';
+			//base vars
+			$cli = (php_sapi_name() === 'cli');
 			$baseDir = dirname($_SERVER['SCRIPT_FILENAME']);
-			$baseUri = dirname($_SERVER['SCRIPT_NAME']) ?: '/';
-			$reqUri = (isset($_SERVER['REQUEST_URI']) && $_SERVER['REQUEST_URI']) ? $_SERVER['REQUEST_URI'] : '/';
-			$reqUriBase = explode('?', $reqUri)[0];
+			$baseUrl = (isset($opts['baseUrl']) && $opts['baseUrl']) ? $opts['baseUrl'] : '';
+			//is cli?
+			if($cli !== false) {
+				//loop through argv
+				foreach($_SERVER['argv'] as $arg) {
+					//match found?
+					if(strpos($arg, '-baseUrl=') === 0) {
+						$baseUrl = explode('=', $arg, 2)[1];
+						break;
+					}
+				}
+				//parse url
+				$parse = $baseUrl ? parse_url($baseUrl) : [];
+				//emulate vars
+				$_SERVER['HTTPS'] = (isset($parse['scheme']) && $parse['scheme'] === 'https') ? 'on' : 'off';
+				$_SERVER['HTTP_HOST'] = (isset($parse['host']) && $parse['host']) ? $parse['host'] : '';
+				$_SERVER['REQUEST_URI'] = (isset($parse['path']) && $parse['path']) ? $parse['path'] : '/';
+				$_SERVER['SCRIPT_NAME'] = rtrim($_SERVER['REQUEST_URI'], '/') . '/index.php';
+			}
+			//url components
+			$port = (isset($_SERVER['SERVER_PORT']) && $_SERVER['SERVER_PORT']) ? $_SERVER['SERVER_PORT'] : 80;
+			$ssl = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS']) ? ($_SERVER['HTTPS'] !== 'off') : ($port == 443);
+			$host = 'http' . ($ssl ? 's' : '') . '://' . $_SERVER['HTTP_HOST'];
+			$reqBase = explode('?', $_SERVER['REQUEST_URI'])[0];
+			$scriptBase = dirname($_SERVER['SCRIPT_NAME']) ?: '/';
 			//loop through opts
 			foreach($opts as $k => $v) {
 				if(property_exists($this, $k)) {
 					$this->$k = $v;
 				}
 			}
-			//set config defaults
+			//default config
 			$this->config = array_merge([
+				'env' => null,
 				'autoRun' => true,
 				'webCron' => true,
-				'router' => true,
-				'env' => 'dev',
 				'baseDir' => $baseDir,
 				'cacheDir' => $baseDir . '/data/cache',
+				'configDir' => $baseDir . '/data/config',
 				'logsDir' => $baseDir . '/data/logs',
 				'schemasDir' => $baseDir . '/data/schemas',
 				'modulesDir' => $baseDir . '/modules',
 				'vendorDirs' => [ $baseDir . '/vendor' ],
+				'cli' => $cli,
 				'ssl' => $ssl,
 				'host' => $host,
-				'url' => $host . $reqUri,
-				'baseUrl' => $host . str_replace('//', '/', '/' . trim($baseUri, '/') . '/'),
-				'pathInfo' => trim(str_replace(($baseUri === '/' ? '' : $baseUri), '', $reqUriBase), '/'),
+				'port' => $port,
+				'url' => $host . $_SERVER['REQUEST_URI'],
+				'baseUrl' => null,
+				'pathInfo' => trim(str_replace(($scriptBase === '/' ? '' : $scriptBase), '', $reqBase), '/'),
 				'composer' => [],
 				'modules' => [],
 				'moduleLoading' => '',
 				'modulesDisabled' => [],
 				'theme' => 'theme',
 			], $this->config);
+			//format base url
+			$this->config['baseUrl'] = $this->config['baseUrl'] ?: ($host . '/' . trim($scriptBase, '/'));
+			$this->config['baseUrl'] = rtrim($this->config['baseUrl'], '/') . '/';
+			//guess env?
+			if(!$this->config['env']) {
+				//set default
+				$env = $this->config['env'] = 'prod';
+				//scan for env in IP / HOST
+				if(isset($_SERVER['REMOTE_ADDR']) && in_array($_SERVER['REMOTE_ADDR'], [ '127.0.0.1', "::1" ])) {
+					$env = 'dev';
+				} else if(isset($_SERVER['HTTP_HOST'])) {
+					$env = explode('.', $_SERVER['HTTP_HOST'])[0];
+				}
+				//match found?
+				if(in_array($env, $this->envs)) {
+					$this->config['env'] = $env;
+				}
+			}
 			//merge env config?
 			if(isset($opts["config." . $this->config['env']])) {
 				$this->config = array_merge($this->config, $opts["config." . $this->config['env']]);
+			}
+			//merge config files
+			foreach(glob($this->config('configDir') . '/*.php') as $file) {
+				//get name
+				list($name, $env) = explode('.', basename($file), 2);
+				//use config?
+				if(!$env || $env === $this->config['env']) {
+					//include file
+					$conf = include($file);
+					//merge config?
+					if($conf && is_array($conf)) {
+						$this->config = array_merge($this->config, $conf);
+					}
+				}
 			}
 			//error reporting
 			error_reporting(E_ALL);
@@ -93,22 +163,22 @@ namespace Codi0\Prototypr {
 			//exception handler
 			set_exception_handler([ $this, 'logException' ]);
 			//error handler
-			set_error_handler(function($type, $message, $file, $line) use($app) {
-				$app->logException(new \ErrorException($message, 0, $type, $file, $line));
-			});
+			set_error_handler($this->bind(function($type, $message, $file, $line) {
+				$this->logException(new \ErrorException($message, 0, $type, $file, $line));
+			}));
 			//fatal error handler
-			register_shutdown_function(function() use($app) {
+			register_shutdown_function($this->bind(function() {
 				//get last error
 				$error = error_get_last();
 				//log exception?
 				if($error && in_array($error['type'], [ E_ERROR, E_CORE_ERROR ])) {
-					$app->logException(new \ErrorException($error['message'], 0, $error['type'], $error['file'], $error['line']));
+					$this->logException(new \ErrorException($error['message'], 0, $error['type'], $error['file'], $error['line']));
 				}
-			});
+			}));
 			//default file loader
-			spl_autoload_register(function($class) use($app) {
+			spl_autoload_register($this->bind(function($class) {
 				//loop through paths
-				foreach($app->config('vendorDirs') as $path) {
+				foreach($this->config('vendorDirs') as $path) {
 					//get file path
 					$file = $path . '/' . str_replace('\\', '/', $class) . '.php';
 					//file exists?
@@ -116,16 +186,16 @@ namespace Codi0\Prototypr {
 						require($file);
 					}
 				}
-			});
+			}));
 			//default services
 			$this->services = array_merge([
-				'composer' => function($app) {
-					return new Composer(array_merge([ 'baseDir' => $app->config('baseDir') ], $app->config('composer')));
+				'composer' => function() {
+					return new Composer(array_merge([ 'baseDir' => $this->config('baseDir') ], $this->config('composer')));
 				},
-				'db' => function($app) {
-					$driver = $app->config('dbDriver') ?: 'mysql';
-					$host = $app->config('dbHost') ?: 'localhost';
-					return new Db($driver . ':host=' . $host . ';dbname=' . $app->config('dbName'), $app->config('dbUser'), $app->config('dbPass'));
+				'db' => function() {
+					$driver = $this->config('dbDriver') ?: 'mysql';
+					$host = $this->config('dbHost') ?: 'localhost';
+					return new Db($driver . ':host=' . $host . ';dbname=' . $this->config('dbName'), $this->config('dbUser'), $this->config('dbPass'));
 				},
 			], $this->services);
 			//sync composer
@@ -133,13 +203,12 @@ namespace Codi0\Prototypr {
 			//start buffer
 			ob_start();
 			//create closure
-			$moduleFn = function($file) use($app) {
+			$moduleFn = $this->bind(function($file) {
 				include_once($file);
-			};
+			});
 			//loop through modules
 			foreach(glob($this->config('modulesDir') . '/*', GLOB_ONLYDIR) as $dir) {
-				//set vars
-				$app = $this;
+				//get name
 				$name = basename($dir);
 				//skip module?
 				if(in_array($name, $this->config['modulesDisabled'])) {
@@ -220,6 +289,33 @@ namespace Codi0\Prototypr {
 			return call_user_func_array($this->helpers[$name], $args);
 		}
 
+		public function service($name, $obj='%%null%%') {
+			//set service?
+			if($obj !== '%%null%%') {
+				$this->services[$name] = $this->bind($obj);
+				return $obj;
+			}
+			//has service?
+			if(!isset($this->services[$name])) {
+				return null;
+			}
+			//execute closure?
+			if($this->services[$name] instanceof \Closure) {
+				$this->services[$name] = call_user_func($this->services[$name], $this);
+			}
+			//get service
+			return $this->services[$name];
+		}
+
+		public function helper($name, $fn='%%null%%') {
+			//set helper?
+			if($fn !== '%%null%%') {
+				$this->helpers[$name] = $this->bind($fn);
+			}
+			//get helper
+			return isset($this->helpers[$name]) ? $this->helpers[$name] : null;
+		}
+
 		public function config($key=null, $val='%%null%%') {
 			//set vars
 			$tmp = $this->config;
@@ -257,31 +353,19 @@ namespace Codi0\Prototypr {
 			return $tmp;
 		}
 
-		public function service($name, $obj='%%null%%') {
-			//set service?
-			if($obj !== '%%null%%') {
-				$this->services[$name] = $obj;
-				return $obj;
+		public function bind($callable, $to = null) {
+			//set $to
+			$to = $to ?: $this;
+			//create closure?
+			if(is_string($callable) && function_exists($callable)) {
+				$callable = \Closure::fromCallable($callable);
 			}
-			//has service?
-			if(!isset($this->services[$name])) {
-				return null;
+			//bind closure?
+			if($callable instanceof \Closure) {
+				$callable = $callable->bindTo($to);
 			}
-			//execute closure?
-			if($this->services[$name] instanceof \Closure) {
-				$this->services[$name] = call_user_func($this->services[$name], $this);
-			}
-			//get service
-			return $this->services[$name];
-		}
-
-		public function helper($name, $fn='%%null%%') {
-			//set helper?
-			if($fn !== '%%null%%') {
-				$this->helpers[$name] = $fn;
-			}
-			//get helper
-			return isset($this->helpers[$name]) ? $this->helpers[$name] : null;
+			//return
+			return $callable;
 		}
 
 		public function event($name, $params='%%null%%', $remove=false) {
@@ -295,7 +379,7 @@ namespace Codi0\Prototypr {
 				$key = sha1(serialize(spl_object_hash((object) $params)));
 				//add event?
 				if(!$remove) {
-					$this->events[$name][$key] = $params;
+					$this->events[$name][$key] = $this->bind($params);
 				}
 				//remove event?
 				if($remove && isset($this->events[$name][$key])) {
@@ -312,12 +396,11 @@ namespace Codi0\Prototypr {
 				if($params !== '%%null%%') {
 					$arr[] = $params;
 				}
-				//add app
-				$arr[] = $this;
 				//call function
 				$res = call_user_func_array($fn, $arr);
 				//stop here?
 				if($res === false) {
+					$params = null;
 					break;
 				}
 				//update params?
@@ -342,14 +425,35 @@ namespace Codi0\Prototypr {
 			if(!is_array($methods)) {
 				$methods = $methods ? explode('|', $methods) : [];
 			}
-			//add route
-			$this->routes[$name] = [
-				'methods' => array_map('strtoupper', $methods),
-				'module' => $this->config('moduleLoading'),
-				'fn' => $callable,
-			];
-			//return
-			return true;
+			//add route?
+			if($callable && $callable !== true) {
+				//add route
+				$this->routes[$name] = [
+					'callback' => $this->bind($callable),
+					'methods' => array_map('strtoupper', $methods),
+					'module' => $this->config('moduleLoading'),
+				];
+				//return
+				return true;
+			}
+			//execute route
+			if(isset($this->routes[$name])) {
+				//cache route
+				$route = (object) $this->routes[$name];
+				//add params
+				$route->path = $name;
+				$route->params = $methods;
+				$route->isPrimary = ($callable === true);
+				//filter route?
+				if($route = $this->event('app.route', $route)) {
+					//has output?
+					if(!ob_get_contents()) {
+						return call_user_func($route->callback, $route->params, $route->isPrimary);
+					}
+				}
+			}
+			//not found
+			return false;
 		}
 
 		public function cache($path, $data='%%null%%', $append=false) {
@@ -408,6 +512,11 @@ namespace Codi0\Prototypr {
 				list($global, $key) = explode('.', $key, 2);
 			} else {
 				$global = $_SERVER['REQUEST_METHOD'];
+			}
+			//get header?
+			if($global === 'header') {
+				$global = 'server';
+				$key = 'HTTP_' . strtoupper($key);
 			}
 			//format global
 			$global = '_' . strtoupper($global ?: $_SERVER['REQUEST_METHOD']);
@@ -484,7 +593,32 @@ namespace Codi0\Prototypr {
 			return $value;
 		}
 
-		public function tpl($name, array $data=[]) {
+		public function json($data, $code=null) {
+			//set vars
+			$checkMsg = false;
+			//guess code?
+			if(!$code && is_array($data) && isset($data['code'])) {
+				$code = (int) $data['code'];
+				$checkMsg = true;
+			}
+			//has code?
+			if($code > 0) {
+				//set response code
+				http_response_code($code);
+				//set response message?
+				if($checkMsg && isset($this->httpMessages[$code])) {
+					if(!isset($data['message']) || !$data['message']) {
+						$data['message'] = $this->httpMessages[$code];
+					}
+				}
+			}
+			//set content-type
+			header("Content-Type: application/json");
+			//display
+			echo json_encode($data);
+		}
+
+		public function tpl($name, array $data=[], $code=null) {
 			//set defaults
 			$data = array_merge([
 				'js' => [],
@@ -516,7 +650,13 @@ namespace Codi0\Prototypr {
 				$js = '<script>window.pageData = ' . json_encode($clean) . ';</script>';
 				$html = str_replace('</head>', $js . "\n" . '</head>', $html);
 			}
-			//return
+			//set code?
+			if($code > 0) {
+				http_response_code($code);
+			}
+			//set content-type
+			header("Content-Type: text/html");
+			//display
 			echo $html;
 		}
 
@@ -525,7 +665,7 @@ namespace Codi0\Prototypr {
 			$baseDir = $this->config('baseDir');
 			$modulesDir = $this->config('modulesDir');
 			$checkPaths = array_merge($this->config('modules'), [ $baseDir ]);
-			$checkExts = [ 'tpl' => 'tpl', 'css' => 'css', 'js' => 'js', 'png' => 'img', 'jpg' => 'img', 'jpeg' => 'img', 'gif' => 'img' ];
+			$checkExts = [ 'tpl' => 'tpl' ];
 			//default opts
 			$opts = array_merge([
 				'relative' => false,
@@ -707,7 +847,6 @@ namespace Codi0\Prototypr {
 			//set vars
 			$next = null;
 			$update = false;
-			$app = $this;
 			$jobs = $this->cache('cron') ?: [];
 			//loop though jobs
 			foreach($jobs as $k => $v) {
@@ -744,7 +883,7 @@ namespace Codi0\Prototypr {
 			}
 			//save callback?
 			if($fn && $fn !== '%%null%%') {
-				$this->cron[$next] = [ 'name' => $name, 'interval' => $interval, 'fn' => $fn ];
+				$this->cron[$next] = [ 'name' => $name, 'interval' => $interval, 'fn' => $this->bind($fn) ];
 				ksort($this->cron);
 			}
 			//stop here?
@@ -754,8 +893,8 @@ namespace Codi0\Prototypr {
 			//get function
 			$fn = $this->cron[$next]['fn'];
 			//return function
-			return function() use($fn, $app) {
-				return call_user_func($fn, $app);
+			return function() use($fn) {
+				return call_user_func($fn);
 			};
 		}
 
@@ -765,11 +904,6 @@ namespace Codi0\Prototypr {
 			$jobs = $this->cache('cron') ?: [];
 			$isRunning = $this->cache('cron-running');
 			$next = $this->cron ? array_keys($this->cron)[0] : 0;
-			//is cmd line?
-			if(!$this->_hasRun && !$job) {
-				$this->config('webCron', false);
-				$this->config('router', false);
-			}
 			//has cron?
 			if(!$this->cron) {
 				return;
@@ -781,8 +915,8 @@ namespace Codi0\Prototypr {
 					$isRunning = null;
 					$this->cache('cron-running', null);
 				}
-				//check web cron?
-				if($this->config('webCron') && !isset($_GET['cron'])) {
+				//create web cron?
+				if(!isset($_GET['cron']) && $this->config('webCron') && !$this->config('cli')) {
 					//call now?
 					if($next <= time() && !$isRunning) {
 						$url = $this->config('baseUrl') . '?cron=' . time();
@@ -807,13 +941,17 @@ namespace Codi0\Prototypr {
 				if($job && $job !== $meta['name']) {
 					continue;
 				}
+				//has callback?
+				if(!isset($meta['fn']) || !$meta['fn']) {
+					continue;
+				}
 				//valid time?
 				if(!$job && $time > time()) {
 					break;
 				}
 				//call function
 				try {
-					call_user_func($meta['fn'], $this);
+					call_user_func($this->bind($meta['fn']));
 				} catch (\Exception $e) {
 					$this->logException($e);
 				}
@@ -833,53 +971,57 @@ namespace Codi0\Prototypr {
 			}
 			//update flag
 			$this->_hasRun = true;
-			//use web cron?
-			if($this->config('webCron')) {
+			//set vars
+			$is404 = true;
+			$webCron = $this->config('webCron') && !$this->config('cli');
+			$cliCron = isset($_SERVER['argv']) && in_array('-cron', $_SERVER['argv']);
+			//run cron?
+			if($cliCron || $webCron) {
+				//execute
 				$this->cron();
+				//stop here?
+				if($cliCron || isset($_GET['cron'])) {
+					return;
+				}
 			}
-			//use router?
-			if($this->routes && $this->config('router') && !isset($_GET['cron']) && !ob_get_contents()) {
-				//set vars
-				$found = false;
-				//search for route
-				foreach([ $this->config('pathInfo'), '404' ] as $needle) {
-					//exact match?
-					if(isset($this->routes[$needle])) {
-						$tmp = $this->routes[$needle];
-						unset($this->routes[$needle]);
-						$this->routes = [ $needle => $tmp ] + $this->routes;
+			//search for route
+			foreach([ $this->config('pathInfo'), '404' ] as $needle) {
+				//exact match?
+				if(isset($this->routes[$needle])) {
+					$tmp = $this->routes[$needle];
+					unset($this->routes[$needle]);
+					$this->routes = [ $needle => $tmp ] + $this->routes;
+				}
+				//loop through routes
+				foreach($this->routes as $name => $route) {
+					//valid method?
+					if($route['methods'] && !in_array($_SERVER['REQUEST_METHOD'], $route['methods'])) {
+						continue;
 					}
-					//loop through routes
-					foreach($this->routes as $path => $meta) {
-						//valid method?
-						if($meta['methods'] && !in_array($_SERVER['REQUEST_METHOD'], $meta['methods'])) {
-							continue;
-						}
-						//valid route?
-						if(!preg_match('/^' . str_replace([ '/', '\\\\' ], [ '\/', '\\' ], $path) . '$/', $needle, $params)) {
-							continue;
-						}
-						//format params
-						array_shift($params);
-						//format route
-						$meta['path'] = $path;
-						$meta['params'] = array_map(function($v) { return str_replace('/', '', $v); }, $params);
-						//filter route?
-						if($meta = $this->event('app.route', $meta)) {
-							//update flag
-							$found = true;
-							//update config
-							$this->config('route', (object) $meta);
-							//call route
-							call_user_func($meta['fn'], $this);
-							//stop
-							break 2;
-						}
+					//valid route?
+					if(!preg_match('/^' . str_replace([ '/', '\\\\' ], [ '\/', '\\' ], $name) . '$/', $needle, $params)) {
+						continue;
+					}
+					//format params
+					array_shift($params);
+					$params = array_map(function($v) { return str_replace('/', '', $v); }, $params);
+					//execute route
+					if($this->route($name, $params, true) !== false) {
+						//update flag
+						$is404 = false;
+						//stop
+						break 2;
 					}
 				}
-				//nothing found?
-				if($found === false) {
-					header("HTTP/1.0 404 Not Found");
+			}
+			//is 404?
+			if($is404 && !ob_get_contents()) {
+				//send 404 header
+				header("HTTP/1.0 404 Not Found");
+				//ue 404 template?
+				if($this->path('404.tpl')) {
+					$this->tpl('404');
+				} else {
 					echo 'Page not found';
 				}
 			}
