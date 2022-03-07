@@ -8,7 +8,7 @@
 
 
 //Config: api
-$apiBase = '/api/';
+$apiBase = '/api/v1/';
 
 //Helper: authenticated
 $this->helper('apiAuth', function() {

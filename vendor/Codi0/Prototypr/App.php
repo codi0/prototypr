@@ -98,9 +98,12 @@ namespace Codi0\Prototypr {
 			}
 			//default config opts
 			$this->config = array_merge([
+				//env
 				'env' => null,
-				'autoRun' => true,
+				'cli' => $cli,
 				'webCron' => true,
+				'autoRun' => 'constructor',
+				//dirs
 				'baseDir' => $baseDir,
 				'vendorDirs' => [ $baseDir . '/vendor' ],
 				'cacheDir' => $baseDir . '/data/cache',
@@ -108,18 +111,25 @@ namespace Codi0\Prototypr {
 				'logsDir' => $baseDir . '/data/logs',
 				'schemasDir' => $baseDir . '/data/schemas',
 				'modulesDir' => $baseDir . '/modules',
-				'theme' => null,
-				'cli' => $cli,
+				//url
 				'ssl' => $ssl,
 				'host' => $host,
 				'port' => $port,
 				'url' => $host . $_SERVER['REQUEST_URI'],
 				'baseUrl' => null,
 				'pathInfo' => trim(str_replace(($scriptBase === '/' ? '' : $scriptBase), '', $reqBase), '/'),
-				'composer' => [],
+				//classes
+				'dbClass' => null,
+				'viewClass' => null,
+				'composerClass' => null,
+				//modules
 				'modules' => [],
 				'moduleLoading' => '',
 				'modulesDisabled' => [],
+				//other
+				'theme' => null,
+				'composer' => [],
+				'customErrorLog' => true,
 			], $this->config);
 			//format base url
 			$this->config['baseUrl'] = $this->config['baseUrl'] ?: ($host . '/' . trim($scriptBase, '/'));
@@ -159,7 +169,6 @@ namespace Codi0\Prototypr {
 			}
 			//error reporting
 			error_reporting(E_ALL);
-			ini_set('log_errors', 0);
 			ini_set('display_errors', 0);
 			ini_set('display_startup_errors', 0);
 			//exception handler
@@ -192,15 +201,18 @@ namespace Codi0\Prototypr {
 			//default services
 			$this->services = array_merge([
 				'composer' => function() {
-					return new Composer(array_merge([ 'baseDir' => $this->config('baseDir') ], $this->config('composer')));
+					$cls = $this->config('composerClass') ?: str_replace('App', 'Composer', get_class($this));
+					return new $cls(array_merge([ 'baseDir' => $this->config('baseDir') ], $this->config('composer')));
 				},
 				'db' => function() {
+					$cls = $this->config('dbClass') ?: str_replace('App', 'Db', get_class($this));
 					$driver = $this->config('dbDriver') ?: 'mysql';
 					$host = $this->config('dbHost') ?: 'localhost';
-					return new Db($driver . ':host=' . $host . ';dbname=' . $this->config('dbName'), $this->config('dbUser'), $this->config('dbPass'));
+					return new $cls($driver . ':host=' . $host . ';dbname=' . $this->config('dbName'), $this->config('dbUser'), $this->config('dbPass'));
 				},
 				'view' => function() {
-					return new View($this);
+					$cls = $this->config('viewClass') ?: str_replace('App', 'View', get_class($this));
+					return new $cls($this);
 				},
 			], $this->services);
 			//sync composer
@@ -254,11 +266,15 @@ namespace Codi0\Prototypr {
 					$this->cache('version', $newV);
 				}
 			}
+			//auto run now?
+			if($this->config('autoRun') === 'constructor') {
+				$this->run();
+			}
 		}
 
 		public function __destruct() {
-			//auto-run?
-			if($this->config('autoRun')) {
+			//auto-run now?
+			if($this->config('autoRun') === 'destructor') {
 				try {
 					$this->run();
 				} catch(\Exception $e) {
@@ -518,6 +534,13 @@ namespace Codi0\Prototypr {
 		}
 
 		public function log($name, $data='%%null%%') {
+			//use default error log?
+			if($name === 'errors' && $data !== '%%null%%') {
+				if(!$this->config('customErrorLog')) {
+					return error_log(explode("]", $data, 2)[1]);
+				}
+			}
+			//use custom log
 			return $this->cache($this->config('logsDir') . "/{$name}.log", $data, true);	
 		}
 
@@ -1112,17 +1135,24 @@ namespace Codi0\Prototypr {
 				'file' => $e->getFile(),
 				'display' => $display,
 			];
-			//skip error?
-			if(!$error = $this->event('app.error', $error)) {
-				return;
-			}
-			//meta data
-			$meta = $error['type'] . " | " . str_replace($this->config('baseDir') . '/', '', $error['file']) . " | line " . $error['line'];
-			//log error
-			$this->log('errors', "[" . $error['date'] . "]\n" . $meta . "\n" . $error['message'] . "\n");
-			//display error?
-			if($error['display'] && $this->config('env') === 'dev') {
-				echo '<div class="error" style="margin:1em 0; padding: 0.5em; border:1px red solid;">' . $meta . '<br><br>' . $error['message'] . '</div>' . "\n";
+			//custom error handling?
+			if($error = $this->event('app.error', $error)) {
+				//meta data
+				$meta = $error['type'] . " in " . str_replace($this->config('baseDir') . '/', '', $error['file']) . " on line " . $error['line'];
+				//log error
+				$this->log('errors', "[" . $error['date'] . "]\n" . $meta . "\n" . $error['message'] . "\n");
+				//display error?
+				if($error['display']) {
+					if($this->config('env') === 'dev') {
+						echo '<div class="error" style="margin:1em 0; padding: 0.5em; border:1px red solid;">' . $meta . '<br><br>' . $error['message'] . '</div>' . "\n";
+					} else {
+						if($this->path('500')) {
+							$this->tpl('500');
+						} else {
+							echo '<h1>Internal Server Error</h1>';
+						}
+					}
+				}
 			}
 		}
 

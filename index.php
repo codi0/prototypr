@@ -29,13 +29,20 @@ return prototypr([
 		//If not set, HTTP_HOST will be scanned for potential matches (E.g. ^dev.)
 		//Supported envs are dev, qa, staging, prod
 		'env' => 'dev',
-
-		//To use a server cronjob instead, set this to false and then call this file from your cronjob
-		//E.g. "/path/to/index.php -cron -baseUrl={url here}" 
-		'webCron' => true,
 		
-		//Designates a module to function as a theme (set to null to disable theme usage)
+		//Designates a module to function as a theme (set to NULL to disable theme usage)
 		'theme' => 'theme',
+
+		//To use a server cronjob instead, set this to FALSE and then call this file from your cronjob
+		//E.g. "/path/to/index.php -cron -baseUrl={url here}" 
+		'webCron' => TRUE,
+
+		//When to call the app "run" method
+		//Options are constructor, destructor and NULL (if NULL, method must be called manually)
+		'autoRun' => 'constructor',
+		
+		//Whether to log php errors to "/data/logs/" directory (if FALSE, default php error log location will be used)
+		'customErrorLog' => TRUE,
 
 	],
 
