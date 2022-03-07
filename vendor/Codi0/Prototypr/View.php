@@ -54,8 +54,8 @@ class View {
 			}
 			//use theme?
 			if($themePath = $this->app->config('themeDir')) {
-				//update tpl name
-				$tplPath = 'layout';
+				//update paths
+				$tplPath = $themePath . '/layout.tpl';
 				$fnPath = $themePath . '/functions';
 				//load functions?
 				if(is_dir($fnPath)) {
@@ -76,7 +76,7 @@ class View {
 		}
 		//path found?
 		if(!$tplPath = $this->app->path($tplPath)) {
-			throw new \Exception($themePath ? "Theme layout not found" : "Template $name not found");
+			throw new \Exception($themePath ? "Theme layout.tpl not found" : "Template $name not found");
 		}
 		//merge data
 		$this->data = array_merge($this->data, $data);

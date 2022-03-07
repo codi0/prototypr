@@ -33,6 +33,9 @@ return prototypr([
 		//To use a server cronjob instead, set this to false and then call this file from your cronjob
 		//E.g. "/path/to/index.php -cron -baseUrl={url here}" 
 		'webCron' => true,
+		
+		//Designates a module to function as a theme (set to null to disable theme usage)
+		'theme' => 'theme',
 
 	],
 

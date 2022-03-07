@@ -96,19 +96,20 @@ namespace Codi0\Prototypr {
 					$this->$k = $v;
 				}
 			}
-			//default config
+			//default config opts
 			$this->config = array_merge([
 				'env' => null,
 				'autoRun' => true,
 				'webCron' => true,
 				'baseDir' => $baseDir,
+				'vendorDirs' => [ $baseDir . '/vendor' ],
 				'cacheDir' => $baseDir . '/data/cache',
 				'configDir' => $baseDir . '/data/config',
 				'logsDir' => $baseDir . '/data/logs',
 				'schemasDir' => $baseDir . '/data/schemas',
-				'themeDir' => null,
 				'modulesDir' => $baseDir . '/modules',
-				'vendorDirs' => [ $baseDir . '/vendor' ],
+				'themeDir' => null,
+				'theme' => null,
 				'cli' => $cli,
 				'ssl' => $ssl,
 				'host' => $host,
@@ -120,7 +121,6 @@ namespace Codi0\Prototypr {
 				'modules' => [],
 				'moduleLoading' => '',
 				'modulesDisabled' => [],
-				'theme' => 'theme',
 			], $this->config);
 			//format base url
 			$this->config['baseUrl'] = $this->config['baseUrl'] ?: ($host . '/' . trim($scriptBase, '/'));
