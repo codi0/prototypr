@@ -29,6 +29,8 @@ namespace Codi0\Prototypr {
 
 	class App {
 
+		const VERSION = '1.0.1';
+
 		private $_hasRun = false;
 		private $_startTime = 0;
 		private $_startMem = 0;
@@ -104,6 +106,7 @@ namespace Codi0\Prototypr {
 				'configDir' => $baseDir . '/data/config',
 				'logsDir' => $baseDir . '/data/logs',
 				'schemasDir' => $baseDir . '/data/schemas',
+				'themeDir' => null,
 				'modulesDir' => $baseDir . '/modules',
 				'vendorDirs' => [ $baseDir . '/vendor' ],
 				'cli' => $cli,
@@ -122,6 +125,10 @@ namespace Codi0\Prototypr {
 			//format base url
 			$this->config['baseUrl'] = $this->config['baseUrl'] ?: ($host . '/' . trim($scriptBase, '/'));
 			$this->config['baseUrl'] = rtrim($this->config['baseUrl'], '/') . '/';
+			//set theme path?
+			if($this->config['theme'] && !$this->config['themeDir']) {
+				$this->config['themeDir'] = $this->config['modulesDir'] . '/' . $this->config['theme'];
+			}
 			//guess env?
 			if(!$this->config['env']) {
 				//set default
@@ -196,6 +203,9 @@ namespace Codi0\Prototypr {
 					$driver = $this->config('dbDriver') ?: 'mysql';
 					$host = $this->config('dbHost') ?: 'localhost';
 					return new Db($driver . ':host=' . $host . ';dbname=' . $this->config('dbName'), $this->config('dbUser'), $this->config('dbPass'));
+				},
+				'view' => function() {
+					return new View($this);
 				},
 			], $this->services);
 			//sync composer
@@ -412,48 +422,58 @@ namespace Codi0\Prototypr {
 			return $params;
 		}
 
-		public function route($name, $methods, $callable=null) {
-			//set vars
-			$module = '';
-			$name = trim($name, '/') ?: '';
-			//is callable?
-			if(is_callable($methods)) {
-				$callable = $methods;
-				$methods = [];
-			}
-			//methods to array?
-			if(!is_array($methods)) {
-				$methods = $methods ? explode('|', $methods) : [];
-			}
-			//add route?
-			if($callable && $callable !== true) {
-				//add route
-				$this->routes[$name] = [
-					'callback' => $this->bind($callable),
-					'methods' => array_map('strtoupper', $methods),
-					'module' => $this->config('moduleLoading'),
-				];
-				//return
-				return true;
-			}
-			//execute route
-			if(isset($this->routes[$name])) {
-				//cache route
-				$route = (object) $this->routes[$name];
-				//add params
-				$route->path = $name;
-				$route->params = $methods;
-				$route->isPrimary = ($callable === true);
-				//filter route?
-				if($route = $this->event('app.route', $route)) {
-					//has output?
-					if(!ob_get_contents()) {
-						return call_user_func($route->callback, $route->params, $route->isPrimary);
+		public function route($route, $callback=null, $isPrimary=false) {
+			//execute route?
+			if(!is_array($route) && !is_callable($callback)) {
+				//format path
+				$path = trim($route, '/');
+				//route exists?
+				if(isset($this->routes[$path])) {
+					//cache route
+					$route = (object) $this->routes[$path];
+					//add params
+					$route->path = $path;
+					$route->params = is_array($callback) ? $callback : [];
+					$route->isPrimary = !!$isPrimary;
+					//filter route?
+					if($route = $this->event('app.route', $route)) {
+						//has output?
+						if(!ob_get_contents()) {
+							//call auth
+							$auth = $route->auth ? call_user_func($route->auth) : true;
+							//auth passed?
+							if(!ob_get_contents() && $auth !== false) {
+								//cache route
+								$this->config('route', $route);
+								//execute
+								return call_user_func($route->callback, $route->params, $route->isPrimary);
+							}
+						}
 					}
 				}
+				//not found
+				return false;
 			}
-			//not found
-			return false;
+			//format path
+			$path = is_array($route) ? $route['path'] : $route;
+			$path = trim($path, '/');
+			//build array
+			$route = array_merge([
+				'callback' => null,
+				'methods' => [],
+				'auth' => null,
+				'module' => $this->config('moduleLoading'),
+			], is_array($route) ? $route : []);
+			//bind callback
+			$route['callback'] = $this->bind($callback ?: $route['callback']);
+			//has valid callback?
+			if(!is_callable($route['callback'])) {
+				throw new \Exception("Route $path requires a valid callback");
+			}
+			//cache route
+			$this->routes[$path] = $route;
+			//return
+			return true;
 		}
 
 		public function cache($path, $data='%%null%%', $append=false) {
@@ -476,7 +496,7 @@ namespace Codi0\Prototypr {
 			if($data !== '%%null%%' && !$closure) {
 				//encode data?
 				if(!is_string($data) && !is_numeric($data)) {
-					$data = json_encode($data);
+					$data = json_encode($data, JSON_PRETTY_PRINT);
 				}
 				//append data?
 				if($append) {
@@ -615,49 +635,16 @@ namespace Codi0\Prototypr {
 			//set content-type
 			header("Content-Type: application/json");
 			//display
-			echo json_encode($data);
+			echo json_encode($data, JSON_PRETTY_PRINT);
 		}
 
 		public function tpl($name, array $data=[], $code=null) {
-			//set defaults
-			$data = array_merge([
-				'js' => [],
-				'meta' => [],
-			], $data);
-			//loop through default config vars
-			foreach([ 'baseUrl', 'env', 'app', 'route.path' ] as $param) {
-				//get value
-				$val = $this->config($param);
-				//set value?
-				if($val !== null) {
-					$data['js'][explode('.', $param)[0]] = $val;
-				}
-			}
-			//has noindex?
-			if(!isset($data['meta']['noindex']) && $this->config('env') !== 'prod') {
-				$data['meta']['noindex'] = true;
-			}
-			//buffer
-			ob_start();
-			//load view
-			$view = new View($this);
-			$view->tpl($name, $data, true);
-			//get html;
-			$html = ob_get_clean();
-			//add js vars?
-			if($data['js']) {
-				$clean = $this->clean($data['js']);
-				$js = '<script>window.pageData = ' . json_encode($clean) . ';</script>';
-				$html = str_replace('</head>', $js . "\n" . '</head>', $html);
-			}
 			//set code?
 			if($code > 0) {
 				http_response_code($code);
 			}
-			//set content-type
-			header("Content-Type: text/html");
-			//display
-			echo $html;
+			//load view
+			$this->view->tpl($name, $data, true);
 		}
 
 		public function path($path='', array $opts=[]) {
@@ -731,6 +718,10 @@ namespace Codi0\Prototypr {
 			}
 			//is relative url?
 			if($path[0] !== '/' && strpos($path, '://') === false) {
+				//is invalid path?
+				if(!preg_match('/[a-z0-9]/i', $path[0]) || preg_match('/\(|\)|\{|\}/', $path)) {
+					return null;
+				}
 				$tmp = $path;
 				$path = $this->config('baseUrl') . $path;
 				//add timestamp?
@@ -972,7 +963,9 @@ namespace Codi0\Prototypr {
 			//update flag
 			$this->_hasRun = true;
 			//set vars
-			$is404 = true;
+			$code = 0;
+			$matched = false;
+			$pathInfo = (string) $this->config('pathInfo');
 			$webCron = $this->config('webCron') && !$this->config('cli');
 			$cliCron = isset($_SERVER['argv']) && in_array('-cron', $_SERVER['argv']);
 			//run cron?
@@ -984,45 +977,76 @@ namespace Codi0\Prototypr {
 					return;
 				}
 			}
-			//search for route
-			foreach([ $this->config('pathInfo'), '404' ] as $needle) {
-				//exact match?
-				if(isset($this->routes[$needle])) {
-					$tmp = $this->routes[$needle];
-					unset($this->routes[$needle]);
-					$this->routes = [ $needle => $tmp ] + $this->routes;
+			//sort keys by similarity to $pathInfo
+			uksort($this->routes, function($a, $b) use($pathInfo) {
+				//set vars
+				$scores = [ 'a' => 0, 'b' => 0 ];
+				$items = [ 'a' => (string) $a, 'b' => (string) $b ];
+				//check shortcuts
+				if($a == '404') return 1;
+				if($b == '404') return -1;
+				if(!$a && !$pathInfo) return -1;
+				if(!$b && !$pathInfo) return 1;
+				//loop through chars
+				for($i=0; $i < strlen($pathInfo); $i++) {
+					//loop through items
+					foreach($items as $k => $v) {
+						//char matches?
+						if(isset($v[$i]) && $v[$i] === $pathInfo[$i]) {
+							$scores[$k]++;
+						} else {
+							$items[$k] = '';
+						}
+					}
+					//stop here?
+					if(!$items['a'] && !$items['b']) {
+						break;
+					}
 				}
-				//loop through routes
-				foreach($this->routes as $name => $route) {
-					//valid method?
-					if($route['methods'] && !in_array($_SERVER['REQUEST_METHOD'], $route['methods'])) {
-						continue;
-					}
-					//valid route?
-					if(!preg_match('/^' . str_replace([ '/', '\\\\' ], [ '\/', '\\' ], $name) . '$/', $needle, $params)) {
-						continue;
-					}
-					//format params
-					array_shift($params);
-					$params = array_map(function($v) { return str_replace('/', '', $v); }, $params);
-					//execute route
-					if($this->route($name, $params, true) !== false) {
-						//update flag
-						$is404 = false;
-						//stop
-						break 2;
-					}
+				//return
+				return ($scores['a'] == $scores['b']) ? 0 : ($scores['a'] > $scores['b'] ? -1 : 1);
+			});
+			//loop through routes
+			foreach($this->routes as $path => $route) {
+				//set vars
+				$target = $path;
+				//is 404 path?
+				if(preg_match('/(^|\/)404(\/|$)/', $target, $m)) {
+					$code = 404;
+					$m[0] = str_replace('404', '(.*)', $m[0]);
+					$target = preg_replace('/(^|\/)404(\/|$)/', $m[0], $target);
+				}
+				//valid method?
+				if($route['methods'] && !in_array($_SERVER['REQUEST_METHOD'], $route['methods'])) {
+					continue;
+				}
+				//valid route?
+				if(!preg_match('/^' . str_replace([ '/', '\\\\' ], [ '\/', '\\' ], $target) . '$/', $pathInfo, $params)) {
+					continue;
+				}
+				//format params
+				array_shift($params);
+				$params = array_map(function($v) { return str_replace('/', '', $v); }, $params);
+				//execute route?
+				if($this->route($path, $params, true) !== false) {
+					$matched = true;
+					break;
 				}
 			}
-			//is 404?
-			if($is404 && !ob_get_contents()) {
-				//send 404 header
-				header("HTTP/1.0 404 Not Found");
-				//ue 404 template?
-				if($this->path('404.tpl')) {
-					$this->tpl('404');
-				} else {
-					echo 'Page not found';
+			//no route match?
+			if($matched === false) {
+				//set code?
+				if(http_response_code() == 200) {
+					$code = 404;
+				}
+				//set default output?
+				if(!ob_get_contents()) {
+					//use 404 template?
+					if($this->path('404.tpl')) {
+						$this->tpl('404');
+					} else {
+						echo '<h1>Page not found</h1>';
+					}
 				}
 			}
 			//get final output
@@ -1030,6 +1054,10 @@ namespace Codi0\Prototypr {
 			//add debug bar?
 			if($this->config('env') === 'dev') {
 				$output = str_replace('</body>', $this->debug() . "\n" . '</body>', $output);
+			}
+			//set response code?
+			if($code > 0) {
+				http_response_code($code);
 			}
 			//filter output?
 			if($output = $this->event('app.output', $output)) {

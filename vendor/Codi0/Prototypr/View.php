@@ -7,6 +7,14 @@ class View {
 	private $app;
 	private $data = [];
 
+	private $queue = [
+		'canonical' => [],
+		'manifest' => [],
+		'favicon' => [],
+		'css' => [],
+		'js' => [],
+	];
+
 	public function __construct($app) {
 		$this->app = $app;
 	}
@@ -20,17 +28,55 @@ class View {
 		throw new \Exception("Template helper method not found: $method");
 	}
 
-	public function tpl($name, array $data=[], $useTheme=false) {
+	public function tpl($name, array $data=[], $isPrimary=false) {
 		//set vars
-		$useTheme = $useTheme && $this->app->config('theme');
-		$tplPath = $useTheme ? 'layout' : $name;
+		$themePath = '';
+		$tplPath = $name;
+		//is primary?
+		if($isPrimary) {
+			//set defaults
+			$data = array_merge([
+				'js' => [],
+				'meta' => [],
+			], $data);
+			//loop through default config vars
+			foreach([ 'baseUrl', 'env', 'app', 'route.path' ] as $param) {
+				//get value
+				$val = $this->app->config($param);
+				//set value?
+				if($val !== null) {
+					$data['js'][explode('.', $param)[0]] = $val;
+				}
+			}
+			//has noindex?
+			if(!isset($data['meta']['noindex']) && $this->app->config('env') !== 'prod') {
+				$data['meta']['noindex'] = true;
+			}
+			//use theme?
+			if($themePath = $this->app->config('themeDir')) {
+				//update tpl name
+				$tplPath = 'layout';
+				$fnPath = $themePath . '/functions';
+				//load functions?
+				if(is_dir($fnPath)) {
+					//create recursive iterator
+					$dir = new \RecursiveDirectoryIterator($fnPath);
+					$iterator = new \RecursiveIteratorIterator($dir);
+					$matches = new \RegexIterator($iterator, '/\.php$/', \RecursiveRegexIterator::MATCH);
+					//loop through matches
+					foreach($matches as $file) {
+						require_once($file);
+					}
+				}
+			}
+		}
 		//add default ext?
 		if(strpos($tplPath, '.') === false) {
 			$tplPath .= '.tpl';
 		}
 		//path found?
-		if(!$path = $this->app->path($tplPath)) {
-			throw new \Exception($useTheme ? "Theme layout not found" : "Template $name not found");
+		if(!$tplPath = $this->app->path($tplPath)) {
+			throw new \Exception($themePath ? "Theme layout not found" : "Template $name not found");
 		}
 		//merge data
 		$this->data = array_merge($this->data, $data);
@@ -39,11 +85,38 @@ class View {
 			$this->data['template'] = $name;
 		}
 		//view closure
-		$fn = function($__path, $tpl) {
-			include($__path);
+		$fn = function($__tpl, $tpl) {
+			include($__tpl);
 		};
+		//buffer
+		ob_start();
 		//load view
-		$fn($path, $this);
+		$fn($tplPath, $this);
+		//get html
+		$html = ob_get_clean();
+		//is primary?
+		if($isPrimary) {
+			//head html
+			$head = '';
+			//add queued asset types
+			foreach($this->queue as $type => $items) {
+				//loop through items
+				foreach($items as $id => $item) {
+					//TO-DO: Resolve dependencies
+					$head .= $item['html'] . "\n";
+				}
+			}
+			//add js vars?
+			if($data['js']) {
+				$head .= '<script>window.pageData = ' . json_encode($this->clean($data['js'])) . ';</script>' . "\n";
+			}
+			//add to head?
+			if(!empty($head)) {
+				$html = str_replace('</head>', $head . '</head>', $html);
+			}
+		}
+		//display
+		echo $html;
 	}
 
 	public function data($key, $clean='html') {
@@ -94,6 +167,63 @@ class View {
 	public function clean($value, $type='html') {
 		return $this->app->clean($value, $type);
 	
+	}
+
+	public function queue($type, $content, array $dependencies=[]) {
+		//valid type?
+		if(!isset($this->queue[$type])) {
+			throw new \Exception("Asset queue only supports the following types: " . implode(', ', array_keys($this->queue)));
+		}
+		//set vars
+		$html = '';
+		$url = $this->app->url($content);
+		$id = $url ? str_replace('.min', '', pathinfo($url, PATHINFO_FILENAME)) : md5($content);
+		//is canonical?
+		if($type === 'canonical') {
+			if($url) {
+				$html = '<link rel="canonical" href="' . $url . '">';
+			}
+		}
+		//is manifest?
+		if($type === 'manifest') {
+			if($url) {
+				$html = '<link rel="manifest" href="' . $url . '">';
+			}
+		}
+		//is favicon?
+		if($type === 'favicon') {
+			if($url) {
+				$html = '<link rel="icon" href="' . $url . '">';
+			}
+		}
+		//is css?
+		if($type === 'css') {
+			if($url) {
+				$html = '<link rel="stylesheet" href="' . $url . '">';
+			} else {
+				$html = '<style>' . strip_tags($content) . '</style>';
+			}
+		}
+		//is js?
+		if($type === 'js') {
+			if($url) {
+				$html = '<script defer src="' . $url . '"></script>';
+			} else {
+				$html = '<script type="module">' . strip_tags($content) . '</script>';
+			}
+		}
+		//add to array
+		$this->queue[$type][$id] = [
+			'html' => $html,
+			'deps' => $dependencies,
+		];
+	}
+
+	public function dequeue($type, $id) {
+		//unqueue asset?
+		if(isset($this->queue[$type]) && isset($this->queue[$type][$id])) {
+			unset($this->queue[$type][$id]);
+		}
 	}
 
 }

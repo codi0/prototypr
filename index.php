@@ -1,16 +1,23 @@
 <?php
 
 /**
- * Open the "/vendor/Codi0/Prototypr/App.php" file for a full list of config and other options that can be set
+ * =====================
+ * CONFIGURATION OPTIONS
+ * =====================
  *
- * Config data can also be passed by creating file(s) containing a php array, in the "/data/config" folder
+ * Config data can be passed directly below, or by creating file(s) containing a php array in the "/data/config/" folder.
+ *
+ * Open the "/vendor/Codi0/Prototypr/App.php" file for a full list of config and other options that can be set.
+ *
 **/
+
 
 //load lib
 require_once(__DIR__ . '/vendor/Codi0/Prototypr/App.php');
 
 //init app
 return prototypr([
+
 	'config' => [
 	
 		//App name
@@ -28,16 +35,21 @@ return prototypr([
 		'webCron' => true,
 
 	],
+
 	'config.dev' => [
 		//overriding config for "dev" environment
 	],
+
 	'config.qa' => [
 		//overriding config for "qa" environment
 	],
+
 	'config.staging' => [
 		//overriding config for "staging" environment
 	],
+
 	'config.prod' => [
 		//overriding config for "prod" environment
 	],
+
 ]);
