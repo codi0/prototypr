@@ -108,7 +108,6 @@ namespace Codi0\Prototypr {
 				'logsDir' => $baseDir . '/data/logs',
 				'schemasDir' => $baseDir . '/data/schemas',
 				'modulesDir' => $baseDir . '/modules',
-				'themeDir' => null,
 				'theme' => null,
 				'cli' => $cli,
 				'ssl' => $ssl,
@@ -125,10 +124,6 @@ namespace Codi0\Prototypr {
 			//format base url
 			$this->config['baseUrl'] = $this->config['baseUrl'] ?: ($host . '/' . trim($scriptBase, '/'));
 			$this->config['baseUrl'] = rtrim($this->config['baseUrl'], '/') . '/';
-			//set theme path?
-			if($this->config['theme'] && !$this->config['themeDir']) {
-				$this->config['themeDir'] = $this->config['modulesDir'] . '/' . $this->config['theme'];
-			}
 			//guess env?
 			if(!$this->config['env']) {
 				//set default

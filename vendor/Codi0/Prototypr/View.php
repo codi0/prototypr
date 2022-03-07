@@ -53,8 +53,9 @@ class View {
 				$data['meta']['noindex'] = true;
 			}
 			//use theme?
-			if($themePath = $this->app->config('themeDir')) {
+			if($theme = $this->app->config('theme')) {
 				//update paths
+				$themePath = $this->app->config('modulesDir') . '/' . $theme;
 				$tplPath = $themePath . '/layout.tpl';
 				$fnPath = $themePath . '/functions';
 				//load functions?

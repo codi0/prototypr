@@ -17,8 +17,8 @@ $this->route('/', function() {
 			'noindex' => true,
 		],
 		'js' => [
-			'userId' => 1,
-			'evil' => "alert('haha!')",
+			'userId' => 1, //dummy data
+			'evil' => "alert('haha!')", //to show evil content is auto-escaped
 		],
 	]);
 });
