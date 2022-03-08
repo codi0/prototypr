@@ -1,6 +1,8 @@
 # prototypr
 A micro php library to help develop apps quickly.
 
+It's designed to run seamlessly in multiple contexts, with a single codebase and minimal configuration. Currently supported are "standalone" and "wordpress" contexts. This means you can run the code as a WordPress plugin or run it as a standalone app, with minimal duplication.
+
 ## Version
 1.0.1
 
@@ -29,8 +31,8 @@ A micro php library to help develop apps quickly.
 ```
 \Prototypr\App       # Contains core API methods
 \Prototypr\Composer  # Automatically syncs external dependencies defined in /package.json
-\Prototypr\Db        # Extends the PDO class, with additional query helper methods (compatible with WPDB)
-\Prototypr\Platform  # Automatically configures the app based on its context (standalone, wordpress)
+\Prototypr\Db        # Extends the PDO class, with additional query helper methods (api compatible with $wpdb)
+\Prototypr\Platform  # Automatically configures the app based on its context (E.g. in WordPress context, $wpdb will be used)
 \Prototypr\View      # A simple php templating class, to help separate business and presentation logic
 ```
 
@@ -65,14 +67,15 @@ Most of your application code will live in modules, allowing you to break your a
 
 ## Theme modules
 
-A module can be assigned as a theme, using a config option. An example theme is included as a reference:
+A module can be assigned as a theme, using a config option. An example theme (called theme!) is included as a reference.
 ```
+//Set which module will act as the theme
 $this->config('theme', '{moduleName}');
 ```
 
 A theme module can also access the View engine, by defining php files in a /functions/ directory. This allows for view manipulation, such as:
 ```
-//inject assets into the template head
+//Inject assets into the template head
 //Inside theme functions, $this represents the View class, with the App class available by calling $this->app
 $this->queue('css', 'assets/css/app.css');
 $this->queue('js', 'assets/js/app.js');
@@ -80,5 +83,49 @@ $this->queue('js', 'assets/js/app.js');
 
 ## Core API methods
 
-//TO-DO
+```
+//TO-DO: Brief explanation and example for how to use each method
 
+$this->bind($fn, $thisObj = NULL)
+$this->service($name, $obj = NULL)  # Any services defined will also be accessible as $this->{serviceName}
+$this->helper($name, $fn = NULL)    # Any helpers defined will also be accessible as $this->{helperName}(...$args)
+$this->config($key = NULL, $val = NULL)
+$this->path($path = '', array $opts = [])
+$this->url($path = '', array $opts = [])
+$this->event($name, $params = NULL, $remove = FALSE)
+$this->route($route, $callback = NULL, $isPrimary = FALSE)
+$this->cache($path, $data = NULL, $append = FALSE)
+$this->log($name, $data = NULL)
+$this->input($name, $clean = 'html')
+$this->clean($value, $context = 'html')
+$this->json($data, $code = NULL)
+$this->tpl($name, array $data = [], $code = NULL)
+$this->http($url, array $opts = [])
+$this->platform($key, $val = NULL)
+$this->schedule($name, $fn = NULL, $interval = 3600, $reset = FALSE)
+$this->cron($job = NULL)
+$this->run()
+
+$this->view->tpl($name, array $data = [])
+$this->view->data($key, $clean = 'html')
+$this->view->url($url = '', $opts = [])
+$this->view->clean($value, $context = 'html')
+$this->view->queue($type, $content, array $dependencies = [])
+$this->view->dequeue($type, $id)
+$this->view->__call()  # Allows access to any helper methods defined on the App class (E.g. $this->view->{helperMethod){...$args)
+
+$this->db->prepare($query, array $params = [])
+$this->db->query($query, array $params = [])
+$this->db->insert($table, array $data)
+$this->db->replace($table, array $data)
+$this->db->update($table, array $data, array $where = [])
+$this->db->delete($table, array $where = [])
+$this->db->get_var($query)
+$this->db->get_row($query, $row_offset = 0)
+$this->db->get_col($query, $col_offset = 0)
+$this->db->get_results($query)
+$this->db->cache($method, $query, array $params = [], $expiry = NULL)
+$this->db->loadSchema($schema)
+
+$this->composer->sync()
+```
