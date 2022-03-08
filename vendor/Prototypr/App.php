@@ -64,7 +64,7 @@ namespace Prototypr {
 			$this->_startMem = memory_get_usage();
 			//base vars
 			$cli = (php_sapi_name() === 'cli');
-			$incFrom = dirname(array_reverse(get_included_files())[1]);
+			$incFrom = str_replace("\\", "/", dirname(array_reverse(get_included_files())[1]));
 			$baseDir = (isset($opts['baseDir']) && $opts['baseDir']) ? $opts['baseDir'] : $incFrom;
 			$baseUrl = (isset($opts['baseUrl']) && $opts['baseUrl']) ? $opts['baseUrl'] : '';
 			//is cli?
