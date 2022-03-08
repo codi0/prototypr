@@ -177,7 +177,7 @@ class View {
 		}
 		//set vars
 		$html = '';
-		$url = $this->app->url($content);
+		$url = $this->url($content);
 		$id = $url ? str_replace('.min', '', pathinfo($url, PATHINFO_FILENAME)) : md5($content);
 		//is canonical?
 		if($type === 'canonical') {

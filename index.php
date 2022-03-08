@@ -50,6 +50,12 @@ return prototypr([
 		//Whether to log php errors to "/data/logs/" directory (if FALSE, default php error log location will be used)
 		'customErrorLog' => TRUE,
 
+		//Database login
+		'dbHost' => 'localhost',
+		'dbName' => NULL,
+		'dbUser' => NULL,
+		'dbPass' => NULL,
+
 	],
 
 	'config.dev' => [
