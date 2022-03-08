@@ -246,10 +246,6 @@ namespace Prototypr {
 			$this->composer->sync();
 			//check platform
 			$this->platform->check();
-			//create closure
-			$moduleFn = $this->bind(function($file) {
-				include_once($file);
-			});
 			//loop through modules
 			foreach(glob($this->config['modulesDir'] . '/*', GLOB_ONLYDIR) as $dir) {
 				//get name
@@ -258,21 +254,9 @@ namespace Prototypr {
 				if($this->config['modulesWhitelist'] && !in_array($name, $this->config['modulesWhitelist'])) {
 					continue;
 				}
-				//mark loading
-				$this->config['moduleLoading'] = $name;
-				//remember module
-				$this->config['modules'][] = $name;
-				//add vendor dir?
-				if(is_dir($dir . '/vendor')) {
-					array_unshift($this->config['vendorDirs'], $dir . '/vendor');
-				}
-				//bootstrap module?
-				if(is_file($dir . '/module.php')) {
-					$moduleFn($dir . '/module.php');
-				}
-				//cancel loading
-				$this->config['moduleLoading'] = '';
-			}
+				//load module
+				$this->module($name);
+			}	
 			//loaded event
 			$this->event('app.loaded');
 			//upgrade event?
@@ -333,31 +317,114 @@ namespace Prototypr {
 			return call_user_func_array($this->helpers[$name], $args);
 		}
 
-		public function service($name, $obj='%%null%%') {
-			//set service?
-			if($obj !== '%%null%%') {
-				$this->services[$name] = $this->bind($obj);
-				return $obj;
+		public function bind($callable, $to = null) {
+			//set $to
+			$to = $to ?: $this;
+			//create closure?
+			if(is_string($callable) && function_exists($callable)) {
+				$callable = \Closure::fromCallable($callable);
 			}
-			//has service?
-			if(!isset($this->services[$name])) {
-				return null;
+			//bind closure?
+			if($callable instanceof \Closure) {
+				$callable = $callable->bindTo($to);
 			}
-			//execute closure?
-			if($this->services[$name] instanceof \Closure) {
-				$this->services[$name] = call_user_func($this->services[$name], $this);
-			}
-			//get service
-			return $this->services[$name];
+			//return
+			return $callable;
 		}
 
-		public function helper($name, $fn='%%null%%') {
-			//set helper?
-			if($fn !== '%%null%%') {
-				$this->helpers[$name] = $this->bind($fn);
+		public function path($path='', array $opts=[]) {
+			//set vars
+			$baseDir = $this->config('baseDir');
+			$modulesDir = $this->config('modulesDir');
+			$checkPaths = array_unique(array_merge([ $this->config('theme') ], array_keys($this->config('modules')), [ $baseDir ]));
+			$checkExts = [ 'tpl' => 'tpl' ];
+			//default opts
+			$opts = array_merge([
+				'relative' => false,
+				'validate' => true,
+			], $opts);
+			//is url?
+			if(strpos($path, '://') !== false) {
+				return $path;
 			}
-			//get helper
-			return isset($this->helpers[$name]) ? $this->helpers[$name] : null;
+			//virtual path?
+			if($path && $path[0] !== '/') {
+				//get file ext
+				$ext = strtolower(pathinfo($path, PATHINFO_EXTENSION));
+				$ext = isset($checkExts[$ext]) ? $checkExts[$ext] : '';
+				//loop through paths
+				foreach($checkPaths as $base) {
+					//is empty?
+					if(empty($base)) {
+						continue;
+					}
+					//add prefix?
+					if(strpos($base, '/') === false) {
+						$base = $modulesDir . '/' . $base;
+					}
+					//check base + ext?
+					if($ext && file_exists($base . '/' . $ext . '/' . $path)) {
+						$path = $base . '/' . $ext . '/' . $path;
+						break;
+					}
+					//check base?
+					if(file_exists($base . '/' . $path)) {
+						$path = $base . '/' . $path;
+						break;
+					}
+				}
+			}
+			//is empty?
+			if(empty($path)) {
+				$path = $baseDir;
+			}
+			//is valid?
+			if($opts['validate'] && !file_exists($path)) {
+				return null;
+			}
+			//is relative?
+			if($opts['relative']) {
+				$path = str_replace($baseDir, '', $path);
+				$path = ltrim($path, '/');
+			}
+			//return
+			return $path;
+		}
+
+		public function url($path='', array $opts=[]) {
+			//default opts
+			$opts = array_merge([
+				'time' => false,
+				'query' => true,
+				'clean' => '',
+			], $opts);
+			//format path
+			$path = $this->path($path, [ 'validate' => false, 'relative' => true ]);
+			$path = trim($path ?: $this->config('url'));
+			//remove query string?
+			if(!$opts['query']) {
+				$path = explode('?', $path, 2)[0];
+			}
+			//is relative url?
+			if($path[0] !== '/' && strpos($path, '://') === false) {
+				//is invalid path?
+				if(!preg_match('/[a-z0-9]/i', $path[0]) || preg_match('/\(|\)|\{|\}/', $path)) {
+					return null;
+				}
+				$tmp = $path;
+				$path = $this->config('baseUrl') . $path;
+				//add timestamp?
+				if($opts['time'] && strpos($tmp, '.') !== false) {
+					//get file
+					$file = $this->config('baseDir') . '/' . $tmp;
+					//file exists?
+					if(is_file($file)) {
+						$path .= (strpos($path, '?') !== false ? '&' : '?') . filemtime($file);
+					}
+				}
+			}
+			//return
+			return $this->clean($path, $opts['clean']);
 		}
 
 		public function config($key=null, $val='%%null%%') {
@@ -397,19 +464,81 @@ namespace Prototypr {
 			return $tmp;
 		}
 
-		public function bind($callable, $to = null) {
-			//set $to
-			$to = $to ?: $this;
-			//create closure?
-			if(is_string($callable) && function_exists($callable)) {
-				$callable = \Closure::fromCallable($callable);
+		public function platform($key=null, $val=null) {
+			//default key?
+			if(empty($key)) {
+				$key = 'loaded';
 			}
-			//bind closure?
-			if($callable instanceof \Closure) {
-				$callable = $callable->bindTo($to);
+			//set data?
+			if(!empty($val)) {
+				$this->platform->set($key, $val);
 			}
 			//return
-			return $callable;
+			return $this->platform->get($key);
+		}
+
+		public function module($name) {
+			//already loaded?
+			if(!array_key_exists($name, $this->config['modules'])) {
+				//get module dir
+				$dir = $this->config['modulesDir'] . '/' . $name;
+				//valid module?
+				if(!is_dir($dir)) {
+					throw new \Exception("Module $name does not exist");
+				}
+				//cache last loading
+				$prev = $this->config['moduleLoading'];
+				//update loading value
+				$this->config['moduleLoading'] = $name;
+				//cache module
+				$this->config['modules'][$name] = null;
+				//add vendor dir?
+				if(is_dir($dir . '/vendor')) {
+					array_unshift($this->config['vendorDirs'], $dir . '/vendor');
+				}
+				//bootstrap module?
+				if(is_file($dir . '/module.php')) {
+					//create closure
+					$moduleFn = $this->bind(function($file) {
+						include_once($file);
+					});
+					//has return statement?
+					if($ret = $moduleFn($dir . '/module.php')) {
+						$this->config['modules'][$name] = $ret;
+					}
+				}
+				//reset loading value
+				$this->config['moduleLoading'] = $prev;
+			}
+			//return
+			return $this->config['modules'][$name];
+		}
+
+		public function service($name, $obj='%%null%%') {
+			//set service?
+			if($obj !== '%%null%%') {
+				$this->services[$name] = $this->bind($obj);
+				return $obj;
+			}
+			//has service?
+			if(!isset($this->services[$name])) {
+				return null;
+			}
+			//execute closure?
+			if($this->services[$name] instanceof \Closure) {
+				$this->services[$name] = call_user_func($this->services[$name], $this);
+			}
+			//get service
+			return $this->services[$name];
+		}
+
+		public function helper($name, $fn='%%null%%') {
+			//set helper?
+			if($fn !== '%%null%%') {
+				$this->helpers[$name] = $this->bind($fn);
+			}
+			//get helper
+			return isset($this->helpers[$name]) ? $this->helpers[$name] : null;
 		}
 
 		public function event($name, $params='%%null%%', $remove=false) {
@@ -510,6 +639,17 @@ namespace Prototypr {
 			return true;
 		}
 
+		public function log($name, $data='%%null%%') {
+			//use default error log?
+			if($name === 'errors' && $data !== '%%null%%') {
+				if(!$this->config('customErrorLog')) {
+					return error_log(explode("]", $data, 2)[1]);
+				}
+			}
+			//use custom log
+			return $this->cache($this->config('logsDir') . "/{$name}.log", $data, true);	
+		}
+
 		public function cache($path, $data='%%null%%', $append=false) {
 			//set vars
 			$output = false;
@@ -556,15 +696,48 @@ namespace Prototypr {
 			return $output;
 		}
 
-		public function log($name, $data='%%null%%') {
-			//use default error log?
-			if($name === 'errors' && $data !== '%%null%%') {
-				if(!$this->config('customErrorLog')) {
-					return error_log(explode("]", $data, 2)[1]);
+		public function dbCache($method, $query, array $params = [], $expiry = NULL) {
+			static $_cache = [];
+			//set vars
+			$s = null;
+			//is statement?
+			if(is_object($query)) {
+				$s = $query;
+				$query = $s->queryString;
+				$params = array_merge(isset($s->params) ? $s->params : [], $params);
+			}
+			//generate cache ID
+			$id = md5($query . $method . http_build_query($params));
+			//execute query?
+			if(!isset($_cache[$id])) {
+				$s = $s ?: $this->db->prepare($query, $params);
+				$_cache[$id] = $this->db->$method($s);
+			}
+			//return
+			return $_cache[$id];
+		}
+
+		public function dbSchema($schema) {
+			//load file?
+			if(strpos($schema, ' ') === false) {
+				//valid path?
+				if(!$path = $this->path($schema)) {
+					return false;
+				}
+				//get file contents
+				$schema = file_get_contents($path);
+			}
+			//loop through queries
+			foreach(explode(';', $schema) as $query) {
+				//trim query
+				$query = trim($query);
+				//execute query?
+				if(!empty($query)) {
+					$this->db->query($query);
 				}
 			}
-			//use custom log
-			return $this->cache($this->config('logsDir') . "/{$name}.log", $data, true);	
+			//return
+			return true;
 		}
 
 		public function input($key, $clean='html') {
@@ -654,6 +827,15 @@ namespace Prototypr {
 			return $value;
 		}
 
+		public function tpl($name, array $data=[], $code=null) {
+			//set code?
+			if($code > 0) {
+				http_response_code($code);
+			}
+			//load view
+			$this->view->tpl($name, $data, true);
+		}
+
 		public function json($data, $code=null) {
 			//set vars
 			$checkMsg = false;
@@ -677,110 +859,6 @@ namespace Prototypr {
 			header("Content-Type: application/json");
 			//display
 			echo json_encode($data, JSON_PRETTY_PRINT);
-		}
-
-		public function tpl($name, array $data=[], $code=null) {
-			//set code?
-			if($code > 0) {
-				http_response_code($code);
-			}
-			//load view
-			$this->view->tpl($name, $data, true);
-		}
-
-		public function path($path='', array $opts=[]) {
-			//set vars
-			$baseDir = $this->config('baseDir');
-			$modulesDir = $this->config('modulesDir');
-			$checkPaths = array_unique(array_merge([ $this->config('theme') ], $this->config('modules'), [ $baseDir ]));
-			$checkExts = [ 'tpl' => 'tpl' ];
-			//default opts
-			$opts = array_merge([
-				'relative' => false,
-				'validate' => true,
-			], $opts);
-			//is url?
-			if(strpos($path, '://') !== false) {
-				return $path;
-			}
-			//virtual path?
-			if($path && $path[0] !== '/') {
-				//get file ext
-				$ext = strtolower(pathinfo($path, PATHINFO_EXTENSION));
-				$ext = isset($checkExts[$ext]) ? $checkExts[$ext] : '';
-				//loop through paths
-				foreach($checkPaths as $base) {
-					//is empty?
-					if(empty($base)) {
-						continue;
-					}
-					//add prefix?
-					if(strpos($base, '/') === false) {
-						$base = $modulesDir . '/' . $base;
-					}
-					//check base + ext?
-					if($ext && file_exists($base . '/' . $ext . '/' . $path)) {
-						$path = $base . '/' . $ext . '/' . $path;
-						break;
-					}
-					//check base?
-					if(file_exists($base . '/' . $path)) {
-						$path = $base . '/' . $path;
-						break;
-					}
-				}
-			}
-			//is empty?
-			if(empty($path)) {
-				$path = $baseDir;
-			}
-			//is valid?
-			if($opts['validate'] && !file_exists($path)) {
-				return null;
-			}
-			//is relative?
-			if($opts['relative']) {
-				$path = str_replace($baseDir, '', $path);
-				$path = ltrim($path, '/');
-			}
-			//return
-			return $path;
-		}
-
-		public function url($path='', array $opts=[]) {
-			//default opts
-			$opts = array_merge([
-				'time' => false,
-				'query' => true,
-				'clean' => '',
-			], $opts);
-			//format path
-			$path = $this->path($path, [ 'validate' => false, 'relative' => true ]);
-			$path = trim($path ?: $this->config('url'));
-			//remove query string?
-			if(!$opts['query']) {
-				$path = explode('?', $path, 2)[0];
-			}
-			//is relative url?
-			if($path[0] !== '/' && strpos($path, '://') === false) {
-				//is invalid path?
-				if(!preg_match('/[a-z0-9]/i', $path[0]) || preg_match('/\(|\)|\{|\}/', $path)) {
-					return null;
-				}
-				$tmp = $path;
-				$path = $this->config('baseUrl') . $path;
-				//add timestamp?
-				if($opts['time'] && strpos($tmp, '.') !== false) {
-					//get file
-					$file = $this->config('baseDir') . '/' . $tmp;
-					//file exists?
-					if(is_file($file)) {
-						$path .= (strpos($path, '?') !== false ? '&' : '?') . filemtime($file);
-					}
-				}
-			}
-			//return
-			return $this->clean($path, $opts['clean']);
 		}
 
 		public function http($url, array $opts=[]) {
@@ -877,19 +955,6 @@ namespace Prototypr {
 			}
 			//return
 			return $response;
-		}
-
-		public function platform($key=null, $val=null) {
-			//default key?
-			if(empty($key)) {
-				$key = 'loaded';
-			}
-			//set data?
-			if(!empty($val)) {
-				$this->platform->set($key, $val);
-			}
-			//return
-			return $this->platform->get($key);
 		}
 
 		public function schedule($name, $fn='%%null%%', $interval=3600, $reset=false) {

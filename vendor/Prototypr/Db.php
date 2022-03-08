@@ -74,36 +74,6 @@ class Db extends \PDO {
 		return $res ?: [];
 	}
 
-	public function cache($method, $query, array $params = [], $expiry = NULL) {
-		//set vars
-		$s = null;
-		//is statement?
-		if(is_object($query)) {
-			$s = $query;
-			$query = $s->queryString;
-			$params = array_merge(isset($s->params) ? $s->params : [], $params);
-		}
-		//set cache ID
-		$cacheId = $query . $method;
-		//add query params
-		foreach($params as $k => $v) {
-			$cacheId .= $k . $v;
-		}
-		//hash key
-		$cacheId = md5($cacheId);
-		//valid method?
-		if(strpos($method, 'get_') !== 0) {
-			throw new \Exception("Cache method must be one of get_var, get_row, get_col or get_results");
-		}
-		//execute query?
-		if(!isset($this->cache[$cacheId])) {
-			$s = $this->prepare($query, $params);
-			$this->cache[$cacheId] = $this->$method($s);
-		}
-		//return
-		return $this->cache[$cacheId];
-	}
-
 	public function prepare($statement, $options = NULL) {
 		//needs preparing?
 		if(!is_object($statement)) {
@@ -188,22 +158,6 @@ class Db extends \PDO {
 		$s = $this->query($sql, $where);
 		//return
 		return $s ? $this->rows_affected : false;
-	}
-
-	public function loadSchema($schema) {
-		//load file?
-		if(strpos($schema, ' ') === false) {
-			$schema = file_get_contents($schema);
-		}
-		//loop through queries
-		foreach(explode(';', $schema) as $query) {
-			//trim query
-			$query = trim($query);
-			//execute query?
-			if(!empty($query)) {
-				$this->query($query);
-			}
-		}
 	}
 
 	protected function params2sql(array $params, $sep, array &$output = []) {

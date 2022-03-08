@@ -1,7 +1,7 @@
 # prototypr
 A micro php library to help develop apps quickly.
 
-It's designed to run seamlessly in multiple contexts, with a single codebase and minimal configuration. Currently supported are "standalone" and "wordpress" contexts. This means you can run the code as a WordPress plugin or run it as a standalone app, with minimal duplication.
+Designed to run seamlessly in multiple contexts, with a single codebase and minimal configuration. Currently supported are "standalone" and "wordpress" contexts. This means you can run the code as a WordPress plugin or as a standalone app, with minimal duplication.
 
 ## Version
 1.0.1
@@ -28,6 +28,7 @@ It's designed to run seamlessly in multiple contexts, with a single codebase and
 ```
 
 ## Library classes
+
 ```
 \Prototypr\App       # Contains core API methods
 \Prototypr\Composer  # Automatically syncs external dependencies defined in /package.json
@@ -38,22 +39,22 @@ It's designed to run seamlessly in multiple contexts, with a single codebase and
 
 ## App execution flow
 
-1. App class is included, and initiated (see index.php)
-2. Environment and config data is processed, with sensible defaults set
-3. Error and exception handling is setup
-4. Class autoloader is setup (handles both global and module /vendor/ paths)
-5. Default services are defined, for lazy-loading when needed (Composer, Db, Platform, View)
-6. External dependencies are synced, if required
-7. Platform check is run, so that app can run seamlessly in multiple contexts (E.g. as a WordPress plugin)
-8. Modules are loaded
-9. app.loaded event is called
-10. app.upgrade event is called (if version config value has changed)
-11. App->run() is called (either immediately, on script termination or manually - depending on config)
-12. app.init event is called
-13. Cron check is run
-14. Route is matched and executed
-15. app.output event is called (allows for output manipulation before being sent to the client)
-16. app.shutdown event is called
+1. App class initiated (see index.php)
+2. Environment and config data processed, with sensible defaults set
+3. Error and exception handling setup
+4. Class autoloader setup (handles both global and module /vendor/ paths)
+5. Default services defined, to be lazy-loading when needed (Composer, Db, Platform, View)
+6. External dependencies synced, if required
+7. Platform analysed, to auto-configure app based on context (E.g. as a WordPress plugin)
+8. Modules loaded
+9. app.loaded event called
+10. app.upgrade event called (if version config value has changed)
+11. App->run() called (either immediately, on script termination or manually - depending on config)
+12. app.init event called
+13. Cron check run
+14. Route matched and executed (if found, otherwise uses fallback 404)
+15. app.output event called (allows for output manipulation before being sent to the client)
+16. app.shutdown event called
 
 ## Use of modules
 
@@ -87,21 +88,24 @@ $this->queue('js', 'assets/js/app.js');
 //TO-DO: Brief explanation and example for how to use each method
 
 $this->bind($fn, $thisObj = NULL)
-$this->service($name, $obj = NULL)  # Any services defined also accessible as $this->{serviceName}
-$this->helper($name, $fn = NULL)    # Any helpers defined also accessible as $this->{helperName}(...$args)
-$this->config($key = NULL, $val = NULL)
 $this->path($path = '', array $opts = [])
 $this->url($path = '', array $opts = [])
+$this->config($key = NULL, $val = NULL)
+$this->platform($key = NULL, $val = NULL)
+$this->module($name)
+$this->service($name, $obj = NULL)  # Any services defined also accessible as $this->{serviceName}
+$this->helper($name, $fn = NULL)    # Any helpers defined also accessible as $this->{helperName}(...$args)
 $this->event($name, $params = NULL, $remove = FALSE)
 $this->route($route, $callback = NULL, $isPrimary = FALSE)
-$this->cache($path, $data = NULL, $append = FALSE)
 $this->log($name, $data = NULL)
+$this->cache($path, $data = NULL, $append = FALSE)
+$this->dbCache($method, $query, array $params = [], $expiry = NULL)
+$this->dbSchema($schema)
 $this->input($name, $clean = 'html')
 $this->clean($value, $context = 'html')
-$this->json($data, $code = NULL)
 $this->tpl($name, array $data = [], $code = NULL)
+$this->json($data, $code = NULL)
 $this->http($url, array $opts = [])
-$this->platform($key, $val = NULL)
 $this->schedule($name, $fn = NULL, $interval = 3600, $reset = FALSE)
 $this->cron($job = NULL)
 $this->run()
@@ -114,18 +118,16 @@ $this->view->queue($type, $content, array $dependencies = [])
 $this->view->dequeue($type, $id)
 $this->view->__call()  # Allows access to App class helpers (E.g. $this->view->{helperMethod){...$args)
 
+$this->db->get_var($query)
+$this->db->get_row($query, $row_offset = 0)
+$this->db->get_col($query, $col_offset = 0)
+$this->db->get_results($query)
 $this->db->prepare($query, array $params = [])
 $this->db->query($query, array $params = [])
 $this->db->insert($table, array $data)
 $this->db->replace($table, array $data)
 $this->db->update($table, array $data, array $where = [])
 $this->db->delete($table, array $where = [])
-$this->db->get_var($query)
-$this->db->get_row($query, $row_offset = 0)
-$this->db->get_col($query, $col_offset = 0)
-$this->db->get_results($query)
-$this->db->cache($method, $query, array $params = [], $expiry = NULL)
-$this->db->loadSchema($schema)
 
 $this->composer->sync()
 ```
