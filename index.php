@@ -22,7 +22,10 @@ return prototypr([
 	
 		//App name
 		'name' => 'Demo App',
-		
+
+		//Set app version number, triggering app.upgrade event when version updated
+		'version' => NULL,
+
 		//If not set, $_SERVER vars will be used to construct the base url
 		'baseUrl' => '',
 
@@ -40,6 +43,9 @@ return prototypr([
 		//When to call the app "run" method
 		//Options are constructor, destructor and NULL (if NULL, method must be called manually)
 		'autoRun' => 'constructor',
+		
+		//Select which modules are loaded (if empty, all modules will be loaded automatically)
+		'modulesWhitelist' => [],
 		
 		//Whether to log php errors to "/data/logs/" directory (if FALSE, default php error log location will be used)
 		'customErrorLog' => TRUE,

@@ -64,7 +64,8 @@ namespace Codi0\Prototypr {
 			$this->_startMem = memory_get_usage();
 			//base vars
 			$cli = (php_sapi_name() === 'cli');
-			$baseDir = dirname($_SERVER['SCRIPT_FILENAME']);
+			$incFrom = dirname(array_reverse(get_included_files())[1]);
+			$baseDir = (isset($opts['baseDir']) && $opts['baseDir']) ? $opts['baseDir'] : $incFrom;
 			$baseUrl = (isset($opts['baseUrl']) && $opts['baseUrl']) ? $opts['baseUrl'] : '';
 			//is cli?
 			if($cli !== false) {
@@ -101,6 +102,7 @@ namespace Codi0\Prototypr {
 				//env
 				'env' => null,
 				'cli' => $cli,
+				'included' => $incFrom !== dirname($_SERVER['SCRIPT_FILENAME']),
 				'webCron' => true,
 				'autoRun' => 'constructor',
 				//dirs
@@ -124,9 +126,10 @@ namespace Codi0\Prototypr {
 				'composerClass' => null,
 				//modules
 				'modules' => [],
+				'modulesWhitelist' => [],
 				'moduleLoading' => '',
-				'modulesDisabled' => [],
 				//other
+				'version' => null,
 				'theme' => null,
 				'composer' => [],
 				'customErrorLog' => true,
@@ -134,6 +137,11 @@ namespace Codi0\Prototypr {
 			//format base url
 			$this->config['baseUrl'] = $this->config['baseUrl'] ?: ($host . '/' . trim($scriptBase, '/'));
 			$this->config['baseUrl'] = rtrim($this->config['baseUrl'], '/') . '/';
+			//script included?
+			if($this->config['included']) {
+				$this->config['autoRun'] = null;
+				$this->config['customErrorLog'] = false;
+			}
 			//guess env?
 			if(!$this->config['env']) {
 				//set default
@@ -153,12 +161,23 @@ namespace Codi0\Prototypr {
 			if(isset($opts["config." . $this->config['env']])) {
 				$this->config = array_merge($this->config, $opts["config." . $this->config['env']]);
 			}
-			//merge config files
-			foreach(glob($this->config('configDir') . '/*.php') as $file) {
+			//config file store
+			$configFiles = [ 'global' => [], 'env' => [] ];
+			//check config directory for matches
+			foreach(glob($this->config['configDir'] . '/*.php') as $file) {
 				//get name
-				list($name, $env) = explode('.', basename($file), 2);
-				//use config?
-				if(!$env || $env === $this->config['env']) {
+				list($name, $env) = explode('.', pathinfo($file, PATHINFO_FILENAME), 2);
+				//use file?
+				if($env === $this->config['env']) {
+					$configFiles['env'][] = $file;
+				} else if(!$env) {
+					$configFiles['global'][] = $file;
+				}
+			}
+			//loop through file types
+			foreach($configFiles as $files) {
+				//loop through files
+				foreach($files as $file) {
 					//include file
 					$conf = include($file);
 					//merge config?
@@ -167,25 +186,28 @@ namespace Codi0\Prototypr {
 					}
 				}
 			}
-			//error reporting
-			error_reporting(E_ALL);
-			ini_set('display_errors', 0);
-			ini_set('display_startup_errors', 0);
-			//exception handler
-			set_exception_handler([ $this, 'logException' ]);
-			//error handler
-			set_error_handler($this->bind(function($type, $message, $file, $line) {
-				$this->logException(new \ErrorException($message, 0, $type, $file, $line));
-			}));
-			//fatal error handler
-			register_shutdown_function($this->bind(function() {
-				//get last error
-				$error = error_get_last();
-				//log exception?
-				if($error && in_array($error['type'], [ E_ERROR, E_CORE_ERROR ])) {
-					$this->logException(new \ErrorException($error['message'], 0, $error['type'], $error['file'], $error['line']));
-				}
-			}));
+			//custom error handling?
+			if(!$this->config['included']) {
+				//error reporting
+				error_reporting(E_ALL);
+				ini_set('display_errors', 0);
+				ini_set('display_startup_errors', 0);
+				//exception handler
+				set_exception_handler([ $this, 'logException' ]);
+				//error handler
+				set_error_handler($this->bind(function($type, $message, $file, $line) {
+					$this->logException(new \ErrorException($message, 0, $type, $file, $line));
+				}));
+				//fatal error handler
+				register_shutdown_function($this->bind(function() {
+					//get last error
+					$error = error_get_last();
+					//log exception?
+					if($error && in_array($error['type'], [ E_ERROR, E_CORE_ERROR ])) {
+						$this->logException(new \ErrorException($error['message'], 0, $error['type'], $error['file'], $error['line']));
+					}
+				}));
+			}
 			//default file loader
 			spl_autoload_register($this->bind(function($class) {
 				//loop through paths
@@ -217,18 +239,16 @@ namespace Codi0\Prototypr {
 			], $this->services);
 			//sync composer
 			$this->composer->sync();
-			//start buffer
-			ob_start();
 			//create closure
 			$moduleFn = $this->bind(function($file) {
 				include_once($file);
 			});
 			//loop through modules
-			foreach(glob($this->config('modulesDir') . '/*', GLOB_ONLYDIR) as $dir) {
+			foreach(glob($this->config['modulesDir'] . '/*', GLOB_ONLYDIR) as $dir) {
 				//get name
 				$name = basename($dir);
-				//skip module?
-				if(in_array($name, $this->config['modulesDisabled'])) {
+				//skip loading module?
+				if($this->config['modulesWhitelist'] && !in_array($name, $this->config['modulesWhitelist'])) {
 					continue;
 				}
 				//mark loading
@@ -250,14 +270,14 @@ namespace Codi0\Prototypr {
 				//cancel loading
 				$this->config['moduleLoading'] = '';
 			}
-			//init event
-			$this->event('app.init');
+			//loaded event
+			$this->event('app.loaded');
 			//upgrade event?
-			if($newV = $this->config('version')) {
+			if($newV = $this->config['version']) {
 				//get cached version
 				$oldV = $this->cache('version');
 				//sync global db schemas
-				foreach(glob($this->config('schemasDir') . '/*.sql') as $file) {
+				foreach(glob($this->config['schemasDir'] . '/*.sql') as $file) {
 					$this->loadSchema($file);
 				}
 				//new version found?
@@ -267,14 +287,14 @@ namespace Codi0\Prototypr {
 				}
 			}
 			//auto run now?
-			if($this->config('autoRun') === 'constructor') {
+			if($this->config['autoRun'] === 'constructor') {
 				$this->run();
 			}
 		}
 
 		public function __destruct() {
 			//auto-run now?
-			if($this->config('autoRun') === 'destructor') {
+			if($this->config['autoRun'] === 'destructor') {
 				try {
 					$this->run();
 				} catch(\Exception $e) {
@@ -986,6 +1006,8 @@ namespace Codi0\Prototypr {
 			$pathInfo = (string) $this->config('pathInfo');
 			$webCron = $this->config('webCron') && !$this->config('cli');
 			$cliCron = isset($_SERVER['argv']) && in_array('-cron', $_SERVER['argv']);
+			//init event
+			$this->event('app.init');
 			//run cron?
 			if($cliCron || $webCron) {
 				//execute
@@ -1024,6 +1046,8 @@ namespace Codi0\Prototypr {
 				//return
 				return ($scores['a'] == $scores['b']) ? 0 : ($scores['a'] > $scores['b'] ? -1 : 1);
 			});
+			//start buffer
+			ob_start();
 			//loop through routes
 			foreach($this->routes as $path => $route) {
 				//set vars
