@@ -48,11 +48,11 @@ It's designed to run seamlessly in multiple contexts, with a single codebase and
 8. Modules are loaded
 9. app.loaded event is called
 10. app.upgrade event is called (if version config value has changed)
-11. App->run() is called (either immediately, on script termination or manually - depending on configuration)
+11. App->run() is called (either immediately, on script termination or manually - depending on config)
 12. app.init event is called
 13. Cron check is run
 14. Route is matched and executed
-15. app.output event is called (allowd for output manipulation before being sent to the client)
+15. app.output event is called (allows for output manipulation before being sent to the client)
 16. app.shutdown event is called
 
 ## Use of modules
@@ -63,7 +63,7 @@ Most of your application code will live in modules, allowing you to break your a
 2. If a module contains a /vendor/ directory, it WILL be added to clas autoloading paths.
 3. Each /module.php file has access to $this (the main App class), without the need to define a class.
 4. Any module template files (.tpl) MUST be in the module root or a /tpl/ directory, in order to be auto-discovered.
-5. Any module asset files (E.g. js, css, images) MUST live inside an /assets/ directory, in order to be directly accessible.
+5. Any module asset files (E.g. js, css, images) MUST live inside an /assets/ directory, to be directly accessible.
 
 ## Theme modules
 
