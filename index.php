@@ -1,19 +1,25 @@
 <?php
 
 /**
- * =====================
- * CONFIGURATION OPTIONS
- * =====================
+ * Plugin Name: Prototypr
+ * Plugin URI: https://github.com/codi-si/prototypr
+ * Description: A micro php library to help develop apps quickly
+ * Version: 1.0.1
+ *
+ *
+ * ==============
+ * CONFIG OPTIONS
+ * ==============
  *
  * Config data can be passed directly below, or by creating file(s) containing a php array in the "/data/config/" folder.
  *
- * Open the "/vendor/Codi0/Prototypr/App.php" file for a full list of config and other options that can be set.
+ * Open the "/vendor/Prototypr/App.php" file for a full list of config and other options that can be set.
  *
 **/
 
 
 //load lib
-require_once(__DIR__ . '/vendor/Codi0/Prototypr/App.php');
+require_once(__DIR__ . '/vendor/Prototypr/App.php');
 
 //init app
 return prototypr([

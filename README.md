@@ -1,5 +1,5 @@
 # prototypr
-A micro php framework to help develop app prototypes with (almost) zero configuration.
+A micro php library to help develop apps quickly.
 
 ## Version
 1.0.1

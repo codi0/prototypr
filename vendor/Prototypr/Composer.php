@@ -1,6 +1,6 @@
 <?php
 
-namespace Codi0\Prototypr;
+namespace Prototypr;
 
 class Composer {
 

@@ -17,7 +17,7 @@ namespace {
 		}
 		//create instance?
 		if(!isset($cache[$instance])) {
-			$cache[$instance] = new \Codi0\Prototypr\App($opts);
+			$cache[$instance] = new \Prototypr\App($opts);
 		}
 		//return
 		return $cache[$instance];
@@ -25,7 +25,7 @@ namespace {
 
 }
 
-namespace Codi0\Prototypr {
+namespace Prototypr {
 
 	class App {
 
@@ -123,6 +123,7 @@ namespace Codi0\Prototypr {
 				//classes
 				'dbClass' => null,
 				'viewClass' => null,
+				'platformClass' => null,
 				'composerClass' => null,
 				//modules
 				'modules' => [],
@@ -232,6 +233,10 @@ namespace Codi0\Prototypr {
 					$host = $this->config('dbHost') ?: 'localhost';
 					return new $cls($driver . ':host=' . $host . ';dbname=' . $this->config('dbName'), $this->config('dbUser'), $this->config('dbPass'));
 				},
+				'platform' => function() {
+					$cls = $this->config('platformClass') ?: str_replace('App', 'Platform', get_class($this));
+					return new $cls($this);
+				},
 				'view' => function() {
 					$cls = $this->config('viewClass') ?: str_replace('App', 'View', get_class($this));
 					return new $cls($this);
@@ -239,6 +244,8 @@ namespace Codi0\Prototypr {
 			], $this->services);
 			//sync composer
 			$this->composer->sync();
+			//check platform
+			$this->platform->check();
 			//create closure
 			$moduleFn = $this->bind(function($file) {
 				include_once($file);
@@ -1117,7 +1124,7 @@ namespace Codi0\Prototypr {
 			$peak = number_format(memory_get_peak_usage() / 1024, 0);
 			//load queries?
 			if(isset($this->services['db']) && !($this->services['db'] instanceOf \Closure)) {
-				$queries = $this->db->getLog();
+				$queries = $this->db->queries;
 			}
 			//debug data
 			$debug  = '<div id="debug-bar" style="width:100%; font-size:12px; text-align:left; padding:10px; margin-top:20px; background:#eee; position:fixed; bottom:0;">' . "\n";
