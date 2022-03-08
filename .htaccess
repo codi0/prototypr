@@ -35,7 +35,7 @@ Allow from all
 	# Route through index.php
 	# Deny direct file access to non-assets
 	RewriteCond %{REQUEST_FILENAME} !-f [OR]
-	RewriteCond %{REQUEST_FILENAME} !(/index.php$)|(/assets/)
+	RewriteCond %{REQUEST_FILENAME} !(/index.php$)|(/manifest.json$)|(/sw.js$)|(/assets/)
 	RewriteRule (.*) index.php/$1 [L]
 
 </IfModule>
