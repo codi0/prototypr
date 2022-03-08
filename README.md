@@ -18,9 +18,9 @@ It's designed to run seamlessly in multiple contexts, with a single codebase and
   /cache/       # Any calls to $this->cache($key, $val) stored here
   /config/      # Any global config options can be stored here (php array in .php files)
   /logs/        # Any calls to $this->log($name, $data) stored here
-  /schemas/     # Any .sql files stored here automatically executed on app install (requires 'version' config option)
+  /schemas/     # Any .sql files stored here executed on app install (if 'version' config set)
 /modules/
-  [moduleName]  # App logic stored in modules, loaded at run-time (each module can have its own /vendor/ folder)
+  [moduleName]  # App logic stored in modules, loaded at run-time
     /module.php
 /vendor/
   /Prototypr/   # Core class files for this library stored here
@@ -32,7 +32,7 @@ It's designed to run seamlessly in multiple contexts, with a single codebase and
 \Prototypr\App       # Contains core API methods
 \Prototypr\Composer  # Automatically syncs external dependencies defined in /package.json
 \Prototypr\Db        # Extends the PDO class to create an api compatible with $wpdb
-\Prototypr\Platform  # Automatically configures the app based on context (E.g. in WordPress context, uses $wpdb)
+\Prototypr\Platform  # Checks the platform the code is run on (E.g. in WordPress context, uses $wpdb)
 \Prototypr\View      # A simple php templating class, to help separate business and presentation logic
 ```
 
