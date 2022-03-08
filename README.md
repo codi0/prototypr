@@ -18,7 +18,7 @@ It's designed to run seamlessly in multiple contexts, with a single codebase and
   /cache/       # Any calls to $this->cache($key, $val) stored here
   /config/      # Any global config options can be stored here (php array in .php files)
   /logs/        # Any calls to $this->log($name, $data) stored here
-  /schemas/     # Any .sql files stored here automatically executed on app install (by setting a 'version' config option)
+  /schemas/     # Any .sql files stored here automatically executed on app install (requires 'version' config option)
 /modules/
   [moduleName]  # App logic stored in modules, loaded at run-time (each module can have its own /vendor/ folder)
     /module.php
@@ -31,8 +31,8 @@ It's designed to run seamlessly in multiple contexts, with a single codebase and
 ```
 \Prototypr\App       # Contains core API methods
 \Prototypr\Composer  # Automatically syncs external dependencies defined in /package.json
-\Prototypr\Db        # Extends the PDO class, with additional query helper methods (api compatible with $wpdb)
-\Prototypr\Platform  # Automatically configures the app based on its context (E.g. in WordPress context, $wpdb will be used)
+\Prototypr\Db        # Extends the PDO class to create an api compatible with $wpdb
+\Prototypr\Platform  # Automatically configures the app based on context (E.g. in WordPress context, uses $wpdb)
 \Prototypr\View      # A simple php templating class, to help separate business and presentation logic
 ```
 
@@ -59,11 +59,11 @@ It's designed to run seamlessly in multiple contexts, with a single codebase and
 
 Most of your application code will live in modules, allowing you to break your app up into distinct parts. Modules follow a few conventions:
 
-1. A module must contain a /module.php file, which acts as a gateway into the module.
-2. If a module contains a /vendor/ directory, it will be added to the autoloading paths checked when loading classes.
-3. Each /module.php file has access to $this (the main App class, and its API methods), without the need to define a class.
-4. Any module template files (.tpl) should be in the module root or a /tpl/ directory, in order to be auto-discovered by the View engine.
-5. Any module asset files (E.g. js, css, images) must live inside an /assets/ directory, in order to be directly accessible by a client.
+1. A module SHOULD contain a /module.php file, which acts as a gateway into the module.
+2. If a module contains a /vendor/ directory, it WILL be added to clas autoloading paths.
+3. Each /module.php file has access to $this (the main App class), without the need to define a class.
+4. Any module template files (.tpl) MUST be in the module root or a /tpl/ directory, in order to be auto-discovered.
+5. Any module asset files (E.g. js, css, images) MUST live inside an /assets/ directory, in order to be directly accessible.
 
 ## Theme modules
 
@@ -76,7 +76,7 @@ $this->config('theme', '{moduleName}');
 A theme module can also access the View engine, by defining php files in a /functions/ directory. This allows for view manipulation, such as:
 ```
 //Inject assets into the template head
-//Inside theme functions, $this represents the View class, with the App class available by calling $this->app
+//Inside theme functions, $this represents the View class
 $this->queue('css', 'assets/css/app.css');
 $this->queue('js', 'assets/js/app.js');
 ```
@@ -87,8 +87,8 @@ $this->queue('js', 'assets/js/app.js');
 //TO-DO: Brief explanation and example for how to use each method
 
 $this->bind($fn, $thisObj = NULL)
-$this->service($name, $obj = NULL)  # Any services defined will also be accessible as $this->{serviceName}
-$this->helper($name, $fn = NULL)    # Any helpers defined will also be accessible as $this->{helperName}(...$args)
+$this->service($name, $obj = NULL)  # Any services defined also accessible as $this->{serviceName}
+$this->helper($name, $fn = NULL)    # Any helpers defined also accessible as $this->{helperName}(...$args)
 $this->config($key = NULL, $val = NULL)
 $this->path($path = '', array $opts = [])
 $this->url($path = '', array $opts = [])
@@ -112,7 +112,7 @@ $this->view->url($url = '', $opts = [])
 $this->view->clean($value, $context = 'html')
 $this->view->queue($type, $content, array $dependencies = [])
 $this->view->dequeue($type, $id)
-$this->view->__call()  # Allows access to any helper methods defined on the App class (E.g. $this->view->{helperMethod){...$args)
+$this->view->__call()  # Allows access to App class helpers (E.g. $this->view->{helperMethod){...$args)
 
 $this->db->prepare($query, array $params = [])
 $this->db->query($query, array $params = [])
