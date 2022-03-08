@@ -55,15 +55,28 @@ A micro php library to help develop apps quickly.
 
 ## Use of modules
 
-Most of the application code will live in modules, allowing you to break your app up into distinct parts for easy management.
+Most of your application code will live in modules, allowing you to break your app up into distinct parts. Modules follow a few conventions:
 
-Modules use context binding, so that each /module.php file has access to $this (the main App class) without the need to define a class. Each module can have its own /vendor/ folder, so that app-specific classes can be initiated automatically.
-
-As well as php code, a module can contain template files (.tpl) and asset files. Assets must be contained in an /assets/ folder, in order to make them directly accessible. By default, htaccess rules block all direct access to files not in an assets folder.
+1. A module must contain a /module.php file, which acts as a gateway into the module.
+2. If a module contains a /vendor/ directory, it will be added to the autoloading paths checked when loading classes.
+3. Each /module.php file has access to $this (the main App class, and its API methods), without the need to define a class.
+4. Any module template files (.tpl) should be in the module root or a /tpl/ directory, in order to be auto-discovered by the View engine.
+5. Any module asset files (E.g. js, css, images) must live inside an /assets/ directory, in order to be directly accessible by a client.
 
 ## Theme modules
 
-A module can be assigned as a theme, by setting $this->config('theme', '{moduleName}'). An example theme is included as a reference. 
+A module can be assigned as a theme, using a config option. An example theme is included as a reference:
+```
+$this->config('theme', '{moduleName}');
+```
+
+A theme module can also access the View engine, by defining php files in a /functions/ directory. This allows for view manipulation, such as:
+```
+//inject assets into the template head
+//Inside theme functions, $this represents the View class, with the App class available by calling $this->app
+$this->queue('css', 'assets/css/app.css');
+$this->queue('js', 'assets/js/app.js');
+```
 
 ## Core API methods
 
