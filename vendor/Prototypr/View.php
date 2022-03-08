@@ -6,6 +6,7 @@ class View {
 
 	private $app;
 	private $data = [];
+	private $init = false;
 
 	private $queue = [
 		'canonical' => [],
@@ -16,6 +17,11 @@ class View {
 	];
 
 	public function __construct($app) {
+		//can call?
+		if($this->init) {
+			throw new \Exception("Method cannot be called once template loaded");
+		}
+		//set app
 		$this->app = $app;
 	}
 
@@ -32,6 +38,7 @@ class View {
 		//set vars
 		$themePath = '';
 		$tplPath = $name;
+		$isPrimary = $isPrimary && !$this->init;
 		//is primary?
 		if($isPrimary) {
 			//set defaults
@@ -70,6 +77,8 @@ class View {
 					}
 				}
 			}
+			//mark as init
+			$this->init = true;
 		}
 		//add default ext?
 		if(strpos($tplPath, '.') === false) {
@@ -171,6 +180,10 @@ class View {
 	}
 
 	public function queue($type, $content, array $dependencies=[]) {
+		//can call?
+		if($this->init) {
+			throw new \Exception("Method cannot be called once template loaded");
+		}
 		//valid type?
 		if(!isset($this->queue[$type])) {
 			throw new \Exception("Asset queue only supports the following types: " . implode(', ', array_keys($this->queue)));
@@ -218,9 +231,15 @@ class View {
 			'html' => $html,
 			'deps' => $dependencies,
 		];
+		//return
+		return $id;
 	}
 
 	public function dequeue($type, $id) {
+		//can call?
+		if($this->init) {
+			throw new \Exception("Method cannot be called once template loaded");
+		}
 		//unqueue asset?
 		if(isset($this->queue[$type]) && isset($this->queue[$type][$id])) {
 			unset($this->queue[$type][$id]);

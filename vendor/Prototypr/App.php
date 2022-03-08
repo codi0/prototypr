@@ -261,11 +261,7 @@ namespace Prototypr {
 				//mark loading
 				$this->config['moduleLoading'] = $name;
 				//remember module
-				if($this->config['theme'] === $name) {
-					array_unshift($this->config['modules'], $name);
-				} else {
-					$this->config['modules'][] = $name;
-				}
+				$this->config['modules'][] = $name;
 				//add vendor dir?
 				if(is_dir($dir . '/vendor')) {
 					array_unshift($this->config['vendorDirs'], $dir . '/vendor');
@@ -696,7 +692,7 @@ namespace Prototypr {
 			//set vars
 			$baseDir = $this->config('baseDir');
 			$modulesDir = $this->config('modulesDir');
-			$checkPaths = array_merge($this->config('modules'), [ $baseDir ]);
+			$checkPaths = array_unique(array_merge([ $this->config('theme') ], $this->config('modules'), [ $baseDir ]));
 			$checkExts = [ 'tpl' => 'tpl' ];
 			//default opts
 			$opts = array_merge([
@@ -714,6 +710,10 @@ namespace Prototypr {
 				$ext = isset($checkExts[$ext]) ? $checkExts[$ext] : '';
 				//loop through paths
 				foreach($checkPaths as $base) {
+					//is empty?
+					if(empty($base)) {
+						continue;
+					}
 					//add prefix?
 					if(strpos($base, '/') === false) {
 						$base = $modulesDir . '/' . $base;
@@ -877,6 +877,19 @@ namespace Prototypr {
 			}
 			//return
 			return $response;
+		}
+
+		public function platform($key=null, $val=null) {
+			//default key?
+			if(empty($key)) {
+				$key = 'loaded';
+			}
+			//set data?
+			if(!empty($val)) {
+				$this->platform->set($key, $val);
+			}
+			//return
+			return $this->platform->get($key);
 		}
 
 		public function schedule($name, $fn='%%null%%', $interval=3600, $reset=false) {
