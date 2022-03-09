@@ -127,7 +127,6 @@ namespace Prototypr {
 				'composerClass' => null,
 				//modules
 				'modules' => [],
-				'modulesWhitelist' => [],
 				'moduleLoading' => '',
 				//other
 				'version' => null,
@@ -248,14 +247,17 @@ namespace Prototypr {
 			$this->platform->check();
 			//loop through modules
 			foreach(glob($this->config['modulesDir'] . '/*', GLOB_ONLYDIR) as $dir) {
-				//get name
-				$name = basename($dir);
-				//skip loading module?
-				if($this->config['modulesWhitelist'] && !in_array($name, $this->config['modulesWhitelist'])) {
-					continue;
+				//get whitelist?
+				if(!isset($whitelist)) {
+					$whitelist = $this->config['modules'];
+					$this->config['modules'] = [];
 				}
-				//load module
-				$this->module($name);
+				//module name
+				$name = basename($dir);
+				//autoload module?
+				if(!$whitelist || isset($whitelist[$name]) || in_array($name, $whitelist)) {
+					$this->module($name);
+				}
 			}	
 			//loaded event
 			$this->event('app.loaded');

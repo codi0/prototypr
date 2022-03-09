@@ -51,7 +51,7 @@ return prototypr([
 		'autoRun' => 'constructor',
 		
 		//Select which modules are loaded (if empty, all modules will be loaded automatically)
-		'modulesWhitelist' => [],
+		'modules' => [],
 		
 		//Whether to log php errors to "/data/logs/" directory (if FALSE, default php error log location will be used)
 		'customErrorLog' => TRUE,

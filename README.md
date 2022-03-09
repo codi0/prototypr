@@ -31,7 +31,7 @@ Designed to run seamlessly in multiple contexts, with a single codebase and mini
 
 ```
 \Prototypr\App       # Contains core API methods
-\Prototypr\Composer  # Automatically syncs external dependencies defined in /package.json
+\Prototypr\Composer  # Automatically syncs external dependencies defined in /composer.json
 \Prototypr\Db        # Extends the PDO class to create an api compatible with $wpdb
 \Prototypr\Platform  # Checks the platform the code is run on (E.g. in WordPress context, uses $wpdb)
 \Prototypr\View      # A simple php templating class, to help separate business and presentation logic
