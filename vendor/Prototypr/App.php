@@ -254,10 +254,25 @@ namespace Prototypr {
 				}
 				//module name
 				$name = basename($dir);
-				//autoload module?
-				if(!$whitelist || isset($whitelist[$name]) || in_array($name, $whitelist)) {
-					$this->module($name);
+				//module meta data
+				$meta = array_merge([
+					'path' => null,
+					'platform' => null,
+				], isset($whitelist[$name]) ? $whitelist[$name] : []);
+				//whitelist match?
+				if($whitelist && !isset($whitelist[$name]) && !in_array($name, $whitelist)) {
+					continue;
 				}
+				//path match?
+				if($meta['path'] && strpos($this->config['pathInfo'], $meta['path']) !== 0) {
+					continue;
+				}
+				//platform match?
+				if($meta['platform'] && $meta['platform'] !== $this->platform()) {
+					continue;
+				}
+				//load now
+				$this->module($name);
 			}	
 			//loaded event
 			$this->event('app.loaded');

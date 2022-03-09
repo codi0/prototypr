@@ -7,7 +7,7 @@ Designed to run seamlessly in multiple contexts, with a single codebase and mini
 1.0.1
 
 ## Quick Start
-- Copy all files to a directory that can execute php
+- Copy all files to a directory that can execute php 7 or above
 - Open index.php to review configuration options (config files can also be created in the "/data/config/" directory).
 - Look at the examples modules, then create your own to define your app logic
 
