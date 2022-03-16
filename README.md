@@ -141,20 +141,23 @@ $this->db->update($table, array $data, array $where = [])
 $this->db->delete($table, array $where = [])
 $this->db->schema($sqlSchemaOrFile)
 
-$this->model->toArray()  # Get all model data as an array
-$this->model->readOnly($readonly = true)  # Make model read only
-$this->model->isHydrated()  # Check if model has been hydrated
-$this->model->isValid()  # Check if model state currently valid
-$this->model->errors()  # Get errors for invalid model state
-$this->model->get(array $conditions = [])  # Hydrate model
-$this->model->set(array $data)  # Set array of data (does not save)
-$this->model->save()  # Save model state, if validation passed
-$this->model->onConstruct(array $opts)  # Called at the end of the constructor
-$this->model->onHydrate()  # Called after model successfully hydrated
-$this->model->onSet(array $data)  # Called at the end of set method
-$this->model->onFilterVal($key, $val)  # called whenever model property updated
-$this->model->onValidate()  # Called during validation, to define custom rules
-$this->model->onSave()  # Called after model state successfully saved
+Model::$idField = 'id'  # Define primary key field
+Model::$dbTable = ''  # Define corresponding db table name
+Model::$dbIgnore = []  # Array of properties to ignore when saving model
+$model->toArray()  # Get all model data as an array
+$model->readOnly($readonly = true)  # Make model read only
+$model->isHydrated()  # Check if model has been hydrated
+$model->isValid()  # Check if model state currently valid
+$model->errors()  # Get errors for invalid model state
+$model->get(array $conditions = [])  # Hydrate model
+$model->set(array $data)  # Set array of data (does not save)
+$model->save()  # Save model state, if validation passed
+$model->onConstruct(array $opts)  # Called at the end of the constructor
+$model->onHydrate()  # Called after model successfully hydrated
+$model->onSet(array $data)  # Called at the end of set method
+$model->onFilterVal($key, $val)  # called whenever model property updated
+$model->onValidate()  # Called during validation, to define custom rules
+$model->onSave()  # Called after model state successfully saved
 
 $this->orm->isCached($model)  # Checks whether model is cached by orm
 $this->orm->create($modelNameOrClass, array $data = [])  # Creates new model
