@@ -31,12 +31,11 @@ Designed to run seamlessly in multiple contexts, with a single codebase and mini
 
 ```
 \Prototypr\Kernel    # Contains core application API methods
-
-\Prototypr\Api  	 # Creates a standalone API server
+\Prototypr\Api  	   # Creates a standalone API server
 \Prototypr\Composer  # Automatically syncs external dependencies defined in /composer.json
 \Prototypr\Db        # Extends the PDO class to create an api compatible with $wpdb
 \Prototypr\Model  	 # Provides a base model to deal with CRUD operations
-\Prototypr\Orm  	 # A simple query store of models by ID or other WHERE conditions
+\Prototypr\Orm  	   # A simple query store of models by ID or other WHERE conditions
 \Prototypr\Platform  # Checks the platform the code is run on (E.g. in WordPress context, uses $wpdb)
 \Prototypr\Proxy  	 # Wraps an existing object so that additional methods can be added
 \Prototypr\View      # A simple php templating class, to help separate business and presentation logic
@@ -176,5 +175,5 @@ $this->view->dequeue($type, $id)  # Remove asset from template
 $this->view->tpl($name, array $data = [])  # Load template
 $this->view->extend($method, $fn)  # Define helpers to use in templates (E.g. $tpl->myMethod(...$args))
 $this->view->data($key, $clean = 'html')  # Get data in template (E.g. $tpl->data('meta.noindex'))
-$this->view->url($url = '', $opts = [])  # Resolve url in template (E.g. $tpl->url('assets/css/style.css'))
+$this->view->url($url = '', $opts = [])  # Resolve url in template (E.g. $tpl->url('assets/img/a.png'))
 ```
