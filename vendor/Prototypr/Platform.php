@@ -4,15 +4,26 @@ namespace Prototypr;
 
 class Platform {
 
-	private $app;
+	protected $kernel;
 
 	private $data = [
 		'context' => 'standalone',
 		'loaded' => 'standalone',
 	];
 
-	public function __construct($app) {
-		$this->app = $app;
+	public function __construct(array $opts=[], $merge=true) {
+		//set opts
+		foreach($opts as $k => $v) {
+			//property exists?
+			if(property_exists($this, $k)) {
+				//is array?
+				if($merge && $this->$k === (array) $this->$k) {
+					$this->$k = array_merge($this->$k, $v);
+				} else {
+					$this->$k = $v;
+				}
+			}
+		}
 	}
 
 	public function get($key) {
@@ -47,20 +58,24 @@ class Platform {
 		if(isset($GLOBALS['wpdb']) && $GLOBALS['wpdb']) {
 			//set loaded
 			$this->set('loaded', 'wordpress');
+			//wrap $wpdb in proxy
+			$proxy = new Proxy($GLOBALS['wpdb']);
+			$proxy->extend('Prototypr\Db');
 			//update DB service
-			$this->app->service('db', $GLOBALS['wpdb']);
+			$this->kernel->service('db', $proxy);
 		} else {
 			//set vars
 			$wpcPath = explode('/wp-content/', __FILE__)[0] . '/wp-config.php';
+			$dbOpts = $this->kernel->config('db_opts') ?: [];
 			//file exists?
-			if(!$this->app->config('dbUser') && is_file($wpcPath)) {
+			if(!isset($dbOpts['user']) && !$dbOpts['user'] && is_file($wpcPath)) {
 				//loop through lines
 				foreach(file($wpcPath) as $line) {
 					//match found?
 					if(preg_match('/DB_HOST|DB_USER|DB_PASS|DB_NAME/', $line, $m)) {
 						//format key
 						$key = strtolower($m[0]);
-						$key = lcfirst(str_replace('_', '', ucwords($key, '_')));
+						$key = str_replace('db_', '', $key);
 						//format value
 						$val = trim(explode(',', $line)[1]);
 						$val = trim(explode(')', $val)[0]);
@@ -68,10 +83,12 @@ class Platform {
 						$val = trim(trim($val, '"'), "'");
 						//update config?
 						if($key && $val) {
-							$this->app->config($key, $val);
+							$dbOpts[$key] = $val;
 						}
 					}
 				}
+				//update config
+				$this->kernel->config('db_opts', $dbOpts);
 			}
 		}
 		//return

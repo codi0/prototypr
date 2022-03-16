@@ -4,6 +4,13 @@ namespace Prototypr;
 
 class Db extends \PDO {
 
+	protected $driver = 'mysql';
+	protected $host = 'localhost';
+	protected $name = '';
+	protected $user = '';
+	protected $pass = '';
+	protected $options = [];
+
 	protected $num_rows = 0;
 	protected $insert_id = 0;
 	protected $rows_affected = 0;
@@ -11,7 +18,27 @@ class Db extends \PDO {
 	protected $num_queries = 0;
 	protected $queries = [];
 
-	protected $cache = [];
+	public function __construct($dsn, $username=null, $password=null, array $options=null) {
+		//set opts?
+		if(is_array($dsn)) {
+			//loop through array
+			foreach($dsn as $k => $v) {
+				//property exists?
+				if(property_exists($this, $k)) {
+					$this->$k = $v;
+				}
+			}
+			//create dsn
+			$dsn = $this->driver . ':host=' . $this->host . ';dbname=' . $this->name;
+			$username = $this->user;
+			$password = $this->pass;
+			$options = $this->options;
+		}
+		//call parent
+		parent::__construct($dsn, $username, $password, $options);
+		//throw exceptions
+		$this->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION); 
+	}
 
 	public function __get($key) {
 		//property exists?
@@ -20,6 +47,52 @@ class Db extends \PDO {
 		}
 		//not found
 		return NULL;
+	}
+
+	public function schema($schema) {
+		//load file?
+		if(strpos($schema, ' ') === false) {
+			$schema = file_get_contents($path);
+		}
+		//loop through queries
+		foreach(explode(';', $schema) as $query) {
+			//trim query
+			$query = trim($query);
+			//execute query?
+			if(!empty($query)) {
+				$this->query($query);
+			}
+		}
+		//return
+		return true;
+	}
+
+	public function cache($method, $query, $params = []) {
+		static $_cache = [];
+		//set vars
+		$s = null;
+		//params to array?
+		if(!is_array($params)) {
+			$params = func_get_args();
+			array_shift($params);
+			array_shift($params);
+		}
+		//is statement?
+		if(is_object($query)) {
+			$s = $query;
+			$query = $s->queryString;
+			$params = array_merge(isset($s->params) ? $s->params : [], $params);
+		}
+		//generate cache ID
+		$id = $query . $method . http_build_query($params);
+		$id = md5(preg_replace('/\s+/', '', $id));
+		//execute query?
+		if(!isset($_cache[$id])) {
+			$s = $s ?: $this->prepare($query, $params);
+			$_cache[$id] = $this->$method($s);
+		}
+		//return
+		return $_cache[$id];
 	}
 
 	public function get_var($query, $column_offset = 0, $row_offset = 0) {
@@ -75,11 +148,15 @@ class Db extends \PDO {
 	}
 
 	public function prepare($statement, $options = NULL) {
+		//format options?
+		if(is_string($options) || is_numeric($options)) {
+			$options = func_get_args();
+			array_shift($options);
+		}
 		//needs preparing?
 		if(!is_object($statement)) {
 			//standardise placeholder format
-			$formats = '(?:[1-9][0-9]*[$])?[-+0-9]*(?: |0|\'.)?[-+0-9]*(?:\.[0-9]+)?';
-			$statement = preg_replace("/(^|[^%]|(%%)+)%($formats)?[sdF]/", " ?", $statement);
+			$statement = preg_replace("/(%[sdf])(\s|\"|\'|$)/i", "?$2", $statement);
 			//call parent
 			$statement = parent::prepare($statement);
 		}
@@ -100,8 +177,18 @@ class Db extends \PDO {
 		if(is_object($s)) {
 			//merge params
 			$params = array_merge(isset($s->params) ? $s->params : [], $params);
+			//convert params to values?
+			if(strpos($s->queryString, '?') !== false && strpos($s->queryString, ':') === false) {
+				$params = array_values($params);
+			}
 			//execute
-			$s->execute($params);
+			try {
+				$s->execute($params);
+			} catch(\Exception $e) {
+				//echo '<p>' . $s->queryString . '</p>' . "\n";
+				//print_r($params);
+				throw $e;
+			}
 			//log query
 			$this->num_queries++;
 			$this->queries[] = $s->queryString;

@@ -7,7 +7,7 @@ Designed to run seamlessly in multiple contexts, with a single codebase and mini
 1.0.1
 
 ## Quick Start
-- Copy all files to a directory that can execute php 7 or above
+- Copy all files to a directory that can execute php 7.2 or above
 - Open index.php to review configuration options (config files can also be created in the "/data/config/" directory).
 - Look at the examples modules, then create your own to define your app logic
 
@@ -30,10 +30,15 @@ Designed to run seamlessly in multiple contexts, with a single codebase and mini
 ## Library classes
 
 ```
-\Prototypr\App       # Contains core API methods
+\Prototypr\Kernel    # Contains core application API methods
+
+\Prototypr\Api  	 # Creates a standalone API server
 \Prototypr\Composer  # Automatically syncs external dependencies defined in /composer.json
 \Prototypr\Db        # Extends the PDO class to create an api compatible with $wpdb
+\Prototypr\Model  	 # Provides a base model to deal with CRUD operations
+\Prototypr\Orm  	 # A simple query store of models by ID or other WHERE conditions
 \Prototypr\Platform  # Checks the platform the code is run on (E.g. in WordPress context, uses $wpdb)
+\Prototypr\Proxy  	 # Wraps an existing object so that additional methods can be added
 \Prototypr\View      # A simple php templating class, to help separate business and presentation logic
 ```
 
@@ -87,6 +92,7 @@ $this->queue('js', 'assets/js/app.js');
 ```
 //TO-DO: Brief explanation and example for how to use each method
 
+$this->isEnv($env)
 $this->bind($fn, $thisObj = NULL)
 $this->path($path = '', array $opts = [])
 $this->url($path = '', array $opts = [])
@@ -94,40 +100,81 @@ $this->config($key = NULL, $val = NULL)
 $this->platform($key = NULL, $val = NULL)
 $this->module($name)
 $this->service($name, $obj = NULL)  # Any services defined also accessible as $this->{serviceName}
-$this->helper($name, $fn = NULL)    # Any helpers defined also accessible as $this->{helperName}(...$args)
+$this->extend($method, $fn)  # Extension methods accessible as $this->{methodName}(...$args)
 $this->event($name, $params = NULL, $remove = FALSE)
 $this->route($route, $callback = NULL, $isPrimary = FALSE)
 $this->log($name, $data = NULL)
 $this->cache($path, $data = NULL, $append = FALSE)
-$this->dbCache($method, $query, array $params = [], $expiry = NULL)
-$this->dbSchema($schema)
 $this->input($name, $clean = 'html')
 $this->clean($value, $context = 'html')
 $this->tpl($name, array $data = [], $code = NULL)
 $this->json($data, $code = NULL)
 $this->http($url, array $opts = [])
+$this->model($name, array $data = [], $find = true)
 $this->schedule($name, $fn = NULL, $interval = 3600, $reset = FALSE)
 $this->cron($job = NULL)
 $this->run()
+$this->debug($asHtml = false)
 
-$this->view->tpl($name, array $data = [])
-$this->view->data($key, $clean = 'html')
-$this->view->url($url = '', $opts = [])
-$this->view->clean($value, $context = 'html')
-$this->view->queue($type, $content, array $dependencies = [])
-$this->view->dequeue($type, $id)
-$this->view->__call()  # Allows access to App class helpers (E.g. $this->view->{helperMethod){...$args)
+$this->api->init(array $routes = [])  # Creates API routes
+$this->api->auth()  # Auth callback, if auth parameter set on a route
+$this->api->home()  # Default home route, used for endpoint discovery
+$this->api->notFound()  # Default 404 route
+$this->api->unauthorized()  # Default 401 route, if auth fails
+$this->api->addData($key, $val)  # Adds to 'data' key of json response
+$this->api->addError($key, $val)  # Adds to 'errors' key of json response
+$this->api->respond(array $response, array $auditData = [])  # Creates json response
+$this->api->formatResponse(array $response)  # Standardises json response
+$this->api->auditLog(array $response, array $auditData = []))  # Creates audit log
+
+$this->composer->sync()  # Automatically called from kernel on startup
 
 $this->db->get_var($query)
 $this->db->get_row($query, $row_offset = 0)
 $this->db->get_col($query, $col_offset = 0)
 $this->db->get_results($query)
+$this->db->cache($method, $query, array $params = [])
 $this->db->prepare($query, array $params = [])
 $this->db->query($query, array $params = [])
 $this->db->insert($table, array $data)
 $this->db->replace($table, array $data)
 $this->db->update($table, array $data, array $where = [])
 $this->db->delete($table, array $where = [])
+$this->db->schema($sqlSchemaOrFile)
 
-$this->composer->sync()
+$this->model->toArray()  # Get all model data as an array
+$this->model->readOnly($readonly = true)  # Make model read only
+$this->model->isHydrated()  # Check if model has been hydrated
+$this->model->isValid()  # Check if model state currently valid
+$this->model->errors()  # Get errors for invalid model state
+$this->model->get(array $conditions = [])  # Hydrate model
+$this->model->set(array $data)  # Set array of data (does not save)
+$this->model->save()  # Save model state, if validation passed
+$this->model->onConstruct(array $opts)  # Called at the end of the constructor
+$this->model->onHydrate()  # Called after model successfully hydrated
+$this->model->onSet(array $data)  # Called at the end of set method
+$this->model->onFilterVal($key, $val)  # called whenever model property updated
+$this->model->onValidate()  # Called during validation, to define custom rules
+$this->model->onSave()  # Called after model state successfully saved
+
+$this->orm->isCached($model)  # Checks whether model is cached by orm
+$this->orm->create($modelNameOrClass, array $data = [])  # Creates new model
+$this->orm->load($modelNameOrClass, array $conditions)  # Hydrates model with data
+$this->orm->save($model)  # Saves model based on state changes
+$this->orm->query($modelName, array $conditions = [])  # Queries database
+$this->orm->onChange($model, $key, $val)  # Called by model class when state updates
+$this->orm->dbTable($model)  # Gets db table for a model class
+
+$this->platform->get($key)  # Valid keys are 'context' and 'loaded'
+$this->platform->set($key, $val)  # Manually set platform vars
+$this->platform->check()  # Automatically called from kernel on startup
+
+$this->proxy->extend($method, $fn)  # Binds a new method to the target object, with $this set as target
+
+$this->view->queue($type, $content, array $dependencies = [])  # Add assets to template
+$this->view->dequeue($type, $id)  # Remove asset from template
+$this->view->tpl($name, array $data = [])  # Load template
+$this->view->extend($method, $fn)  # Define helpers to use in templates (E.g. $tpl->myMethod(...$args))
+$this->view->data($key, $clean = 'html')  # Get data in template (E.g. $tpl->data('meta.noindex'))
+$this->view->url($url = '', $opts = [])  # Resolve url in template (E.g. $tpl->url('assets/css/style.css'))
 ```

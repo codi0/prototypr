@@ -30,13 +30,13 @@ class Composer {
 		'create-project' => [ '--prefer-dist' ],
 	];
 
-	public function __construct(array $opts=[]) {
+	public function __construct(array $opts=[], $merge=true) {
 		//set opts
 		foreach($opts as $k => $v) {
 			//property exists?
 			if(property_exists($this, $k)) {
 				//is array?
-				if($this->$k === (array) $this->$k) {
+				if($merge && $this->$k === (array) $this->$k) {
 					$this->$k = array_merge($this->$k, $v);
 				} else {
 					$this->$k = $v;

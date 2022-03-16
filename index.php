@@ -18,10 +18,10 @@
 **/
 
 
-//load lib
-require_once(__DIR__ . '/vendor/Prototypr/App.php');
+//load kernel
+require_once(__DIR__ . '/vendor/Prototypr/Kernel.php');
 
-//init app
+//launch app
 return prototypr([
 
 	'config' => [
@@ -33,34 +33,36 @@ return prototypr([
 		'version' => NULL,
 
 		//If not set, $_SERVER vars will be used to construct the base url
-		'baseUrl' => '',
+		'base_url' => '',
 
 		//If not set, HTTP_HOST will be scanned for potential matches (E.g. ^dev.)
 		//Supported envs are dev, qa, staging, prod
-		'env' => 'dev',
+		'env' => NULL,
 		
 		//Designates a module to function as a theme (set to NULL to disable theme usage)
 		'theme' => 'theme',
 
 		//To use a server cronjob instead, set this to FALSE and then call this file from your cronjob
 		//E.g. "/path/to/index.php -cron -baseUrl={url here}" 
-		'webCron' => TRUE,
+		'webcron' => TRUE,
 
 		//When to call the app "run" method
 		//Options are constructor, destructor and NULL (if NULL, method must be called manually)
-		'autoRun' => 'constructor',
+		'autorun' => 'constructor',
 		
 		//Select which modules are loaded (if empty, all modules will be loaded automatically)
 		'modules' => [],
 		
 		//Whether to log php errors to "/data/logs/" directory (if FALSE, default php error log location will be used)
-		'customErrorLog' => TRUE,
+		'custom_error_log' => TRUE,
 
 		//Database login
-		'dbHost' => 'localhost',
-		'dbName' => NULL,
-		'dbUser' => NULL,
-		'dbPass' => NULL,
+		'db_opts' => [
+			'host' => 'localhost',
+			'name' => NULL,
+			'user' => NULL,
+			'pass' => NULL,
+		],
 
 	],
 

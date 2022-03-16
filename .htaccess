@@ -28,8 +28,8 @@ Allow from all
 
 	# Force SSL?
 	<ifModule mod_ssl.c>
-	#	RewriteCond %{HTTPS} off
-	#	RewriteRule .* https://%{HTTP_HOST}%{REQUEST_URI} [R=301,L] 
+		RewriteCond %{HTTPS} off
+		RewriteRule .* https://%{HTTP_HOST}%{REQUEST_URI} [R=301,L] 
 	</IfModule>
 
 	# Route through index.php
