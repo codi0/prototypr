@@ -20,19 +20,11 @@ class Model {
 	public static $dbIgnore = [];
 
 	public function __construct(array $opts=[], $merge=true) {
-		//get public props?
+		//set kernel
+		$this->kernel = isset($opts['kernel']) ? $opts['kernel'] : prototypr();
+		//process props?
 		if(!$this->__meta['data']) {
-			//use reflection
-			$ref = new \ReflectionObject($this);
-			//process public properties
-			foreach($ref->getProperties(\ReflectionProperty::IS_PUBLIC) as $prop) {
-				//non-static property?
-				if(!$prop->isStatic()) {
-					$key = $prop->getName();
-					$this->__meta['data'][$key] = $this->$key;
-					unset($this->$key);
-				}
-			}
+			$this->__meta['data'] = $this->processProps();
 		}
 		//set opts
 		foreach($opts as $k => $v) {
@@ -60,7 +52,7 @@ class Model {
 	}
 
 	public function __isset($key) {
-		return isset($this->__meta['data'][$key]);
+		return isset($this->__meta['data'][$key]['value']);
 	}
 
 	public function __get($key) {
@@ -69,7 +61,7 @@ class Model {
 			throw new \Exception("Property $key not found");
 		}
 		//return
-		return $this->__meta['data'][$key];
+		return $this->__meta['data'][$key]['value'];
 	}
 
 	public function __set($key, $val) {
@@ -81,12 +73,22 @@ class Model {
 		if(!array_key_exists($key, $this->__meta['data'])) {
 			throw new \Exception("Property $key not found");
 		}
+		//custom filters
+		foreach($this->__meta['data'][$key]['filters'] as $index => $cb) {
+			//lazy load callback?
+			if(is_array($cb) && is_string($cb[0]) && $cb[0][0] === '$') {
+				$cb[0] = eval("return $cb[0];");
+				$this->__meta['data'][$key]['filters'] = $cb;
+			}
+			//execute callback
+			$val = call_user_func($cb, $val);
+		}
 		//filter value
 		$val = $this->onFilterVal($key, $val);
 		//update value?
-		if($this->__meta['data'][$key] !== $val) {
+		if($this->__meta['data'][$key]['value'] !== $val) {
 			//set value
-			$this->__meta['data'][$key] = $val;
+			$this->__meta['data'][$key]['value'] = $val;
 			//notify change?
 			if($this->__meta['hydrated']) {
 				$this->kernel->orm->onChange($this, $key, $val);
@@ -95,7 +97,14 @@ class Model {
 	}
 
 	public function toArray() {
-		return $this->__meta['data'];
+		//set vars
+		$arr = [];
+		//loop through data
+		foreach($this->__meta['data'] as $key => $meta) {
+			$arr[$key] = $meta['value'];
+		}
+		//return
+		return $arr;
 	}
 
 	public function readOnly($readOnly=true) {
@@ -109,12 +118,33 @@ class Model {
 			return isset($this->$idField) && $this->$idField;
 		}
 		//return
-		return $this->kernel->orm->isCached($this);
+		return  $this->kernel->orm->isCached($this);
 	}
 
 	public function isValid() {
 		//reset errors
 		$this->errors = [];
+		//loop through props
+		foreach($this->__meta['data'] as $key => $meta) {
+			//get value
+			$val = $this->__meta['data'][$key]['value'];
+			//process custom rules
+			foreach($this->__meta['data'][$key]['rules'] as $index => $cb) {
+				//lazy load callback?
+				if(is_array($cb) && is_string($cb[0]) && $cb[0][0] === '$') {
+					$cb[0] = eval("return $cb[0];");
+					$this->__meta['data'][$key]['rules'] = $cb;
+				}
+				//call rule
+				$error = '';
+				$res = call_user_func_array($cb, [ $val, &$error ]);
+				//has error?
+				if($error || ($res && is_string($res)) || $res === false) {
+					$this->errors[$key] = $error ?: (is_string($res) && $res ? $res : 'Invalid data');
+					break;
+				}
+			}
+		}
 		//validate hook
 		$this->onValidate();
 		//return
@@ -217,12 +247,16 @@ class Model {
 	}
 
 	protected function onFilterVal($key, $val) {
-		//check type
-		if(is_string($this->$key)) {
+		//get org value
+		$orgVal = $this->__meta['data'][$key]['value'];
+		//cast by type
+		if(is_string($orgVal)) {
 			$val = trim($val);
-		} else if(is_int($this->$key)) {
+		} else if(is_int($orgVal)) {
 			$val = intval($val) ?: NULL;
-		} else if(is_array($this->$key)) {
+		} else if(is_numeric($orgVal)) {
+			$val = floatval($val) ?: NULL;
+		} else if(is_array($orgVal)) {
 			$val = (array) ($val ?: []);
 		} else {
 			$val = $val ?: NULL;
@@ -237,6 +271,60 @@ class Model {
 
 	protected function onSave() {
 		return;
+	}
+
+	protected function processProps() {
+		//set vars
+		$data = [];
+		$ref = new \ReflectionObject($this);
+		//process public properties
+		foreach($ref->getProperties(\ReflectionProperty::IS_PUBLIC) as $prop) {
+			//skip property?
+			if($prop->isStatic()) {
+				continue;
+			}
+			//get prop name
+			$name = $prop->getName();
+			//add to array
+			$data[$name] = [
+				'value' => $this->$name,
+				'filters' => [],
+				'rules' => [],
+			];
+			//remove original
+			unset($this->$name);
+			//has comment?
+			if($comment = $prop->getDocComment()) {
+				//parse comment
+				if(preg_match_all('/(\w+)\((.*)\)/',$comment, $matches)) {
+					//loop through matches
+					foreach($matches[1] as $key => $val) {
+						//get param
+						$param = trim(strtolower($val));
+						$args = array_map('trim', explode(',', trim($matches[2][$key])));
+						//param exists
+						if($args && isset($data[$name][$param])) {
+							//process args
+							foreach($args as $k => $v) {
+								//method call?
+								if(preg_match('/(::|->)/', $v, $match)) {
+									//parse string
+									$exp = explode($match[1], $v);
+									$b = array_pop($exp);
+									$a = implode($match[1], $exp);
+									//set callback
+									$args[$k] = [ $a, $b ];
+								}
+							}
+							//add to array
+							$data[$name][$param] = $args;
+						}
+					}
+				}
+			}
+		}
+		//return
+		return $data;
 	}
 
 }
