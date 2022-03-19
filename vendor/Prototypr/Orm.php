@@ -100,7 +100,7 @@ class Orm {
 		return $model;
 	}
 
-	public function loadCollection($name, array $conditions) {
+	public function loadCollection($name, array $conditions=[]) {
 		//set vars
 		$collection = [];
 		//query data
@@ -199,7 +199,7 @@ class Orm {
 			//get class name
 			$class = get_class($name);
 			//set conditions?
-			if(empty($conditions)) {
+			if(!$collection && !$conditions) {
 				$idField = $this->idField($class);
 				$idValue = isset($name->$idField) ? $name->$idField : null;
 				$conditions = $idValue ? [ $idField => $idValue ] : [];
@@ -215,15 +215,19 @@ class Orm {
 		if(!array_filter($conditions, function($item) { return !empty($item); })) {
 			$conditions = [];
 		}
-		//has conditions?
-		if(!empty($conditions)) {
+		//run query?
+		if($collection || $conditions) {
 			//create where sql
 			foreach($conditions as $k => $v) {
 				$conditions[$k] = (string) $v;
 				$whereSql[] = "$k = %s";
 			}
 			//convert to string
-			$whereSql = implode(" AND ", $whereSql);
+			if(!empty($whereSql)) {
+				$whereSql = implode(" AND ", $whereSql);
+			} else {
+				$whereSql = "1=1";
+			}
 			//select method
 			$method = $collection ? 'get_results' : 'get_row';
 			//execute query

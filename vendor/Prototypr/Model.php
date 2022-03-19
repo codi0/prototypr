@@ -332,7 +332,7 @@ class Model {
 				$name = $refProp->getName();
 				//add to meta data
 				$meta['props'][$name] = [
-					'value' => $refClass->getDefaultProperties()[$name] ?: NULL,
+					'value' => $refClass->getDefaultProperties()[$name],
 					'filters' => [],
 					'rules' => [],
 				];
