@@ -38,20 +38,30 @@ class Orm {
 		return $cacheKey && isset($this->loadCache[$cacheKey]);
 	}
 
-	public function create($name, array $data=[]) {
-		//get class
+	public function create($name, array $opts=[]) {
+		//set vars
 		$class = $this->formatClass($name);
+		$idField = $this->idField($class);
 		//pass kernel
-		$data['kernel'] = $this->kernel;
-		//create object
-		return new $class($data);
+		$opts['kernel'] = $this->kernel;
+		//create model
+		$model = new $class($opts);
+		//update cache?
+		if(isset($model->$idField) && $model->$idField) {
+			//generate ID cache key
+			$idCacheKey = $this->formatKey($class, [ $idField => $model->$idField ]);
+			//cache model
+			$this->loadCache[$idCacheKey] = $model;
+		}
+		//return
+		return $model;
 	}
 
 	public function load($name, $conditions) {
 		//set vars
 		$data = [];
-		$cacheKeys = [];
-		$isEmpty = false;
+		$idCacheKey = null;
+		$conCacheKey = null;
 		$class = $this->formatClass($name);
 		$idField = $this->idField($class);
 		//convert to array?
@@ -64,16 +74,16 @@ class Orm {
 		}
 		//has conditions?
 		if(!empty($conditions)) {
-			//set conditions key
-			$cacheKeys['conditions'] = $this->formatKey($class, $conditions);
-			//set ID key?
+			//generate conditions cache key
+			$conCacheKey = $this->formatKey($class, $conditions);
+			//generate ID cache key?
 			if(isset($conditions[$idField]) && $conditions[$idField]) {
-				$cacheKeys['id'] = $this->formatKey($class, [ $idField => $conditions[$idField] ]);
+				$idCacheKey = $this->formatKey($class, [ $idField => $conditions[$idField] ]);
 			}
-			//loop through keys
-			foreach($cacheKeys as $key) {
+			//check cache keys
+			foreach([ $idCacheKey, $conCacheKey ] as $key) {
 				//cache hit found?
-				if(isset($this->loadCache[$key])) {
+				if($key && isset($this->loadCache[$key])) {
 					return $this->loadCache[$key];
 				}
 			}
@@ -82,19 +92,25 @@ class Orm {
 		}
 		//create model
 		$model = $this->create($name, $data);
-		//has conditions?
-		if(!empty($conditions)) {
-			//set ID key?
-			if(isset($model->$idField) && $model->$idField) {
-				$cacheKeys['id'] = $this->formatKey($class, [ $idField => $model->$idField ]);
-			}
-			//loop through cache keys
-			foreach($cacheKeys as $key) {
-				$this->loadCache[$key] = $model;
-			}
+		//update cache?
+		if($conditions && $conCacheKey) {
+			$this->loadCache[$conCacheKey] = $model;
 		}
 		//return
 		return $model;
+	}
+
+	public function loadCollection($name, array $conditions) {
+		//set vars
+		$collection = [];
+		//query data
+		$result = $this->query($name, $conditions, true);
+		//loop through data
+		foreach($result as $row) {
+			$collection[] = $this->create($name, $row);
+		}
+		//return
+		return $collection;
 	}
 
 	public function save($model) {
@@ -104,7 +120,7 @@ class Orm {
 		$class = get_class($model);
 		$idField = $this->idField($class);
 		$table = $this->dbTable($class);
-		$ignoreFields = isset($class::$dbIgnore) ? $class::$dbIgnore : [];
+		$ignoreFields = method_exists($class, '__meta') ? $class::__meta('ignore') : [];
 		//valid model?
 		if(!property_exists($model, $idField)) {
 			throw new \Exception("Model cannot be saved without an ID field: $idField");
@@ -177,7 +193,7 @@ class Orm {
 		return ($model->$idField && $result !== false) ? $model->$idField : false;
 	}
 
-	public function query($name, array $conditions=[]) {
+	public function query($name, array $conditions=[], $collection=false) {
 		//is object?
 		if(is_object($name)) {
 			//get class name
@@ -192,7 +208,7 @@ class Orm {
 			$name = $class;
 		}
 		//set vars
-		$row = [];
+		$result = [];
 		$whereSql = [];
 		$table = $this->dbTable($name);
 		//check if all conditions empty?
@@ -208,18 +224,15 @@ class Orm {
 			}
 			//convert to string
 			$whereSql = implode(" AND ", $whereSql);
+			//select method
+			$method = $collection ? 'get_results' : 'get_row';
 			//execute query
-			$row = $this->kernel->db->cache('get_row', "SELECT * FROM $table WHERE $whereSql", $conditions) ?: [];
-			//check for json
-			foreach($row as $key => $val) {
-				//decode value?
-				if(!empty($val)) {
-					$row->$key = json_decode($val, true) ?: $val;
-				}
-			}
+			$result = (array) $this->kernel->db->cache($method, "SELECT * FROM $table WHERE $whereSql", $conditions) ?: [];
+			//decode json
+			$result = $this->decodeJson($result);
 		}
 		//return
-		return (array) $row;
+		return $result;
 	}
 
 	public function onChange($model, $key, $val) {
@@ -241,18 +254,29 @@ class Orm {
 		} else {
 			//set vars
 			$class = $this->formatClass($name);
-			$namespace = explode('\\', $class)[0];
+			$namespace = strtolower(explode('\\', $class)[0]);
 			$name = strtolower(preg_replace('/(?<!^)[A-Z]/', '_$0', $name));
 			$table = $this->tableName;
-			//has class prop?
-			if(isset($class::$dbTable) && $class::$dbTable) {
-				$table = $class::$dbTable;
+			//check class meta?
+			if(method_exists($class, '__meta')) {
+				$table = $class::__meta('table') ?: $table;
 			}
 		}
 		//update placeholders
 		$table = str_replace([ '{namespace}', '{name}' ], [ $namespace, $name ], $table);
 		//return
 		return $this->kernel->event('orm.table', $table, $name);
+	}
+
+	protected function idField($class) {
+		//set vars
+		$res = 'id';
+		//check class meta?
+		if(method_exists($class, '__meta')) {
+			$res = $class::__meta('id') ?: $res;
+		}
+		//return
+		return $res;
 	}
 
 	protected function formatClass($name) {
@@ -280,13 +304,18 @@ class Orm {
 		return md5($class . json_encode($data));
 	}
 
-	protected function idField($class) {
-		//has ID field?
-		if(isset($class::$idField) && $class::$idField) {
-			return $class::$idField;
+	protected function decodeJson(array $arr) {
+		//loop through array
+		foreach($arr as $key => $val) {
+			//is array?
+			if(is_array($val) || is_object($val)) {
+				$arr[$key] = $this->decodeJson((array) $val);
+			} else if(!empty($val)) {
+				$arr[$key] = json_decode($val, true) ?: $val;
+			}
 		}
-		//use default
-		return 'id';
+		//return
+		return $arr;
 	}
 
 }

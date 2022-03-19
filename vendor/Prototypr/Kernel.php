@@ -46,7 +46,7 @@ namespace Prototypr {
 			500 => 'Internal Server Error',
 		];
 
-		public static function instance($opts=[]) {
+		public final static function instance($opts=[]) {
 			//format opts?
 			if(!is_array($opts)) {
 				$opts = [ 'instance' => $opts ];
@@ -63,7 +63,7 @@ namespace Prototypr {
 			return self::$_instances[$opts['instance']];		
 		}
 
-		public function __construct(array $opts=[]) {
+		public final function __construct(array $opts=[]) {
 			//debug vars
 			$this->_startTime = microtime(true);
 			$this->_startMem = memory_get_usage();

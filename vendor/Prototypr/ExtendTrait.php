@@ -19,7 +19,7 @@ trait ExtendTrait {
 		throw new \Exception("Method $method not found");
 	}
 
-	public function extend($method, $callable = null) {
+	public final function extend($method, $callable = null) {
 		//set vars
 		$ext = [];
 		$target = isset($this->__target) ? $this->__target : $this;
@@ -77,7 +77,7 @@ trait ExtendTrait {
 		}
 	}
 
-	public static function createClosure($callable, $thisArg=null) {
+	public final static function createClosure($callable, $thisArg=null) {
 		//file cache
 		static $fileCache = [];
 		//is closure?
