@@ -14,38 +14,30 @@ class Model {
 		$this->__meta = self::__meta();
 		//loop through props
 		foreach($this as $k => $v) {
-			//has opt?
-			$hasOpt = array_key_exists($k, $opts);
-			//is public prop?
-			if(array_key_exists($k, $this->__meta['props'])) {
-				//update value?
-				if($hasOpt) {
-					$this->__meta['props'][$k]['value'] = $opts[$k];
-				}
-				//remove prop
+			//delete public property?
+			if(isset($this->__meta['props'][$k])) {
 				unset($this->$k);
-			} else {
-				//update value?
-				if($hasOpt) {
-					$this->$k = $opts[$k];
-				}
+			}
+			//update value?
+			if(array_key_exists($k, $opts)) {
+				$this->$k = $opts[$k];
 			}
 		}
 		//set kernel?
 		if(!$this->kernel) {
 			$this->kernel = prototypr();
 		}
+		//mark as constructed
+		$this->__meta['constructed'] = true;
 		//construct hook
 		$this->onConstruct($opts);
-		//is hydrated?
+		//hydrate hook?
 		if($this->isHydrated()) {
-			//update flag
+			//mark as hydrated
 			$this->__meta['hydrated'] = true;
-			//hydrate hook
+			//call hook
 			$this->onHydrate();
 		}
-		//update flag
-		$this->__meta['constructed'] = true;
 	}
 
 	public final function __isset($key) {
@@ -54,7 +46,7 @@ class Model {
 
 	public final function __get($key) {
 		//property exists?
-		if(!array_key_exists($key, $this->__meta['props'])) {
+		if(!isset($this->__meta['props'][$key])) {
 			throw new \Exception("Property $key not found");
 		}
 		//return
@@ -63,11 +55,11 @@ class Model {
 
 	public final function __set($key, $val) {
 		//read only?
-		if($this->__meta['readonly']) {
+		if($this->__meta['constructed'] && $this->__meta['readonly']) {
 			throw new \Exception("Model is read only");
 		}
 		//property exists?
-		if(!array_key_exists($key, $this->__meta['props'])) {
+		if(!isset($this->__meta['props'][$key])) {
 			throw new \Exception("Property $key not found");
 		}
 		//custom filters
@@ -109,13 +101,10 @@ class Model {
 	}
 
 	public final function isHydrated() {
-		//is constructing?
-		if(!$this->__meta['constructed']) {
-			$idField = $this->__meta['id'];
-			return isset($this->$idField) && $this->$idField;
-		}
+		//get id field
+		$idField = $this->__meta['id'];
 		//return
-		return  $this->kernel->orm->isCached($this);
+		return isset($this->$idField) && $this->$idField;
 	}
 
 	public final function isValid() {
@@ -171,11 +160,11 @@ class Model {
 			//loop through data
 			foreach($data as $k => $v) {
 				//set property?
-				if(array_key_exists($k, $this->__meta['props'])) {
+				if(isset($this->__meta['props'][$k])) {
 					$this->$k = $v;
 				}
 			}
-			//update flag
+			//mark as hydrated
 			$this->__meta['hydrated'] = true;
 			//hydrate hook
 			$this->onHydrate();
@@ -188,7 +177,7 @@ class Model {
 		//loop through data
 		foreach($data as $k => $v) {
 			//set property?
-			if(array_key_exists($k, $this->__meta['props'])) {
+			if(isset($this->__meta['props'][$k])) {
 				$this->$k = $v;
 			}
 		}
@@ -299,8 +288,8 @@ class Model {
 				'errors' => [],
 				'errorsArray' => false,
 				'readonly' => false,
-				'hydrated' => false,
 				'constructed' => false,
+				'hydrated' => false,
 			];
 			//do reflection
 			$refClass = new \ReflectionClass(static::class);
