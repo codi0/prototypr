@@ -125,13 +125,6 @@ namespace Prototypr {
 				'url' => $host . $_SERVER['REQUEST_URI'],
 				'base_url' => null,
 				'pathinfo' => trim(str_replace(($scriptBase === '/' ? '' : $scriptBase), '', $reqBase), '/'),
-				//classes
-				'api_class' => null,
-				'composer_class' => null,
-				'db_class' => null,
-				'orm_class' => null,
-				'platform_class' => null,
-				'view_class' => null,
 				//modules
 				'modules' => [],
 				'module_loading' => '',
@@ -252,6 +245,10 @@ namespace Prototypr {
 					return new $class($opts);
 				},
 				'platform' => function(array $opts, $class) {
+					//create object
+					return new $class($opts);
+				},
+				'validator' => function(array $opts, $class) {
 					//create object
 					return new $class($opts);
 				},
@@ -557,6 +554,7 @@ namespace Prototypr {
 				$class = $this->config($name . '_class') ?: __NAMESPACE__ . '\\' . ucfirst($name);
 				//get opts
 				$opts = $this->config($name . '_opts') ?: [];
+				//add kernel
 				$opts['kernel'] = $this;
 				//create service
 				$this->services[$name] = $this->services[$name]($opts, $class);
@@ -728,6 +726,8 @@ namespace Prototypr {
 		public function input($key=null, $clean='html') {
 			//set vars
 			$global = null;
+			//ensure globals set
+			$_GET; $_POST; $_COOKIE; $_REQUEST; $_SERVER;
 			//compound key?
 			if($key && strpos($key, '.') !== false) {
 				list($global, $key) = explode('.', $key, 2);
@@ -963,7 +963,7 @@ namespace Prototypr {
 			return $response;
 		}
 
-		public function model($name, array $data=[], $find=true) {
+		public function model($name, $data=[], $find=true) {
 			//select method
 			$method = ($find && $data) ? 'load' : 'create';
 			//return model
@@ -1276,6 +1276,7 @@ namespace Prototypr {
 				'line' => $e->getLine(),
 				'file' => $e->getFile(),
 				'trace' => $e->getTraceAsString(),
+				'debug' => isset($e->debug) ? $e->debug : [],
 				'display' => $display,
 			];
 			//custom error handling?
@@ -1287,7 +1288,18 @@ namespace Prototypr {
 				//display error?
 				if($error['display']) {
 					if($this->isEnv('dev')) {
-						echo '<div class="error" style="margin:1em 0; padding: 0.5em; border:1px red solid;">' . $meta . '<br><br>' . $error['message'] . '<br><br>' . str_replace("\n", "<br>", $error['trace']) . '</div>' . "\n";
+						echo '<div class="error" style="margin:1em 0; padding: 0.5em; border:1px red solid;">';
+						echo $meta;
+						echo '<br><br>';
+						echo $error['message'];
+						echo '<br><br>';
+						foreach($error['debug'] as $k => $v) {
+							echo '<b>' . $k . '</b>: ' . var_export($v, true);
+							echo '<br><br>';
+						}
+						echo str_replace("\n", "<br>", $error['trace']);
+						echo '</div>';
+						echo "\n";
 					} else {
 						if($this->path('500')) {
 							$this->tpl('500');

@@ -31,13 +31,14 @@ Designed to run seamlessly in multiple contexts, with a single codebase and mini
 
 ```
 \Prototypr\Kernel    # Contains core application API methods
-\Prototypr\Api  	   # Creates a standalone API server
+\Prototypr\Api       # Creates a standalone API server
 \Prototypr\Composer  # Automatically syncs external dependencies defined in /composer.json
 \Prototypr\Db        # Extends the PDO class to create an api compatible with $wpdb
-\Prototypr\Model  	 # Provides a base model to deal with CRUD operations
-\Prototypr\Orm  	   # A simple query store of models by ID or other WHERE conditions
+\Prototypr\Model     # Provides a base model to deal with CRUD operations
+\Prototypr\Orm       # A simple query store of models by ID or other WHERE conditions
 \Prototypr\Platform  # Checks the platform the code is run on (E.g. in WordPress context, uses $wpdb)
-\Prototypr\Proxy  	 # Wraps an existing object so that additional methods can be added
+\Prototypr\Proxy     # Wraps an existing object so that additional methods can be added
+\Prototypr\Validator # Validate or filter input based on set rules
 \Prototypr\View      # A simple php templating class, to help separate business and presentation logic
 ```
 
@@ -85,6 +86,10 @@ A theme module can also access the View engine, by defining php files in a /func
 $this->queue('css', 'assets/css/app.css');
 $this->queue('js', 'assets/js/app.js');
 ```
+
+## Model auto-wiring
+
+TO-DO
 
 ## Core API methods
 
@@ -141,29 +146,24 @@ $this->db->update($table, array $data, array $where = [])
 $this->db->delete($table, array $where = [])
 $this->db->schema($sqlSchemaOrFile)
 
-Model::$idField = 'id'  # Define primary key field
-Model::$dbTable = ''  # Define corresponding db table name
-Model::$dbIgnore = []  # Array of properties to ignore when saving model
+$model->id()  # Returns value of ID field
 $model->toArray()  # Get all model data as an array
 $model->readOnly($readonly = true)  # Make model read only
-$model->isHydrated()  # Check if model has been hydrated
 $model->isValid()  # Check if model state currently valid
 $model->errors()  # Get errors for invalid model state
 $model->get(array $conditions = [])  # Hydrate model
 $model->set(array $data)  # Set array of data (does not save)
 $model->save()  # Save model state, if validation passed
 $model->onConstruct(array $opts)  # Called at the end of the constructor
-$model->onHydrate()  # Called after model successfully hydrated
-$model->onSet(array $data)  # Called at the end of set method
-$model->onFilterVal($key, $val)  # called whenever model property updated
+$model->onSet(array $data)  # Filters $data at the start of the set method
+$model->onFilterVal($key, $value)  # Filters updated property $value
 $model->onValidate()  # Called during validation, to define custom rules
 $model->onSave()  # Called after model state successfully saved
 
-$this->orm->isCached($model)  # Checks whether model is cached by orm
 $this->orm->create($modelNameOrClass, array $data = [])  # Creates new model
 $this->orm->load($modelNameOrClass, array $conditions)  # Hydrates model with data
 $this->orm->save($model)  # Saves model based on state changes
-$this->orm->query($modelName, array $conditions = [])  # Queries database
+$this->orm->hydrate($model)  # Hydrates an existing model object that has no ID
 $this->orm->onChange($model, $key, $val)  # Called by model class when state updates
 $this->orm->dbTable($model)  # Gets db table for a model class
 
@@ -172,6 +172,11 @@ $this->platform->set($key, $val)  # Manually set platform vars
 $this->platform->check()  # Automatically called from kernel on startup
 
 $this->proxy->extend($method, $fn)  # Binds a new method to the target object, with $this set as target
+
+$this->validator->addRule($name, $callback)  # Add a new validation rule callback
+$this->validator->addFilter($name, $callback)  # Add a new filter callback
+$this->validator->isValid($rule, $value, &$error = '')  # Check if value passed validation rule
+$this->validator->filter($filter, $value)  # Filter a value
 
 $this->view->queue($type, $content, array $dependencies = [])  # Add assets to template
 $this->view->dequeue($type, $id)  # Remove asset from template

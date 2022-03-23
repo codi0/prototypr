@@ -185,8 +185,7 @@ class Db extends \PDO {
 			try {
 				$s->execute($params);
 			} catch(\Exception $e) {
-				//echo '<p>' . $s->queryString . '</p>' . "\n";
-				//print_r($params);
+				$e->debug = [ 'Query' => $s->queryString, 'Params' => $params ];
 				throw $e;
 			}
 			//log query

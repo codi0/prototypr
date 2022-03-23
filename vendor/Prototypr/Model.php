@@ -10,34 +10,27 @@ class Model {
 	protected $kernel;
 
 	public final function __construct(array $opts=[], $merge=true) {
-		//setup meta
+		//set meta
 		$this->__meta = self::__meta();
+		//set kernel
+		$this->kernel = (isset($opts['kernel']) && $opts['kernel']) ? $opts['kernel'] : prototypr();
+		//start hydrating
+		$this->__meta['hydrating'] = true;
 		//loop through props
 		foreach($this as $k => $v) {
-			//delete public property?
+			//delete property?
 			if(isset($this->__meta['props'][$k])) {
 				unset($this->$k);
 			}
-			//update value?
+			//set property?
 			if(array_key_exists($k, $opts)) {
 				$this->$k = $opts[$k];
 			}
 		}
-		//set kernel?
-		if(!$this->kernel) {
-			$this->kernel = prototypr();
-		}
-		//mark as constructed
-		$this->__meta['constructed'] = true;
+		//finish hydrating
+		$this->__meta['hydrating'] = false;
 		//construct hook
 		$this->onConstruct($opts);
-		//hydrate hook?
-		if($this->isHydrated()) {
-			//mark as hydrated
-			$this->__meta['hydrated'] = true;
-			//call hook
-			$this->onHydrate();
-		}
 	}
 
 	public final function __isset($key) {
@@ -55,22 +48,16 @@ class Model {
 
 	public final function __set($key, $val) {
 		//read only?
-		if($this->__meta['constructed'] && $this->__meta['readonly']) {
+		if($this->__meta['readonly'] && !$this->__meta['hydrating']) {
 			throw new \Exception("Model is read only");
 		}
 		//property exists?
 		if(!isset($this->__meta['props'][$key])) {
 			throw new \Exception("Property $key not found");
 		}
-		//custom filters
-		foreach($this->__meta['props'][$key]['filters'] as $index => $cb) {
-			//lazy load callback?
-			if(is_array($cb) && is_string($cb[0]) && $cb[0][0] === '$') {
-				$cb[0] = eval("return $cb[0];");
-				$this->__meta['props'][$key]['filters'] = $cb;
-			}
-			//execute callback
-			$val = call_user_func($cb, $val);
+		//run custom filters
+		foreach($this->__meta['props'][$key]['filters'] as $filter) {
+			$val = $this->kernel->validator->filter($filter, $val);
 		}
 		//filter value
 		$val = $this->onFilterVal($key, $val);
@@ -78,11 +65,18 @@ class Model {
 		if($this->__meta['props'][$key]['value'] !== $val) {
 			//set value
 			$this->__meta['props'][$key]['value'] = $val;
-			//notify change?
-			if($this->__meta['hydrated']) {
+			//notify of change?
+			if(!$this->__meta['hydrating']) {
 				$this->kernel->orm->onChange($this, $key, $val);
 			}
 		}
+	}
+
+	public final function id() {
+		//get id field
+		$idField = $this->__meta['id'];
+		//return
+		return $this->$idField;
 	}
 
 	public final function toArray() {
@@ -97,46 +91,8 @@ class Model {
 	}
 
 	public final function readOnly($readOnly=true) {
+		//mark as read only
 		$this->__meta['readonly'] = (bool) $readOnly;
-	}
-
-	public final function isHydrated() {
-		//get id field
-		$idField = $this->__meta['id'];
-		//return
-		return isset($this->$idField) && $this->$idField;
-	}
-
-	public final function isValid() {
-		//reset errors
-		$this->__meta['errors'] = [];
-		//loop through props
-		foreach($this->__meta['props'] as $key => $meta) {
-			//get value
-			$val = $this->__meta['props'][$key]['value'];
-			//process custom rules
-			foreach($this->__meta['props'][$key]['rules'] as $index => $cb) {
-				//lazy load callback?
-				if(is_array($cb) && is_string($cb[0]) && $cb[0][0] === '$') {
-					$cb[0] = eval("return $cb[0];");
-					$this->__meta['props'][$key]['rules'] = $cb;
-				}
-				//call rule
-				$error = '';
-				$res = call_user_func_array($cb, [ $val, &$error ]);
-				//has error?
-				if($error || ($res && is_string($res)) || $res === false) {
-					//format error message
-					$error = $error ?: (is_string($res) && $res ? $res : 'Invalid data');
-					//add error
-					$this->addError($key, $error);
-				}
-			}
-		}
-		//validate hook
-		$this->onValidate();
-		//return
-		return empty($this->__meta['errors']);
 	}
 
 	public final function errors($reset=false) {
@@ -150,30 +106,56 @@ class Model {
 		return $errors;
 	}
 
-	public final function get(array $where=[]) {
-		//is hydrated?
-		if(!$this->isHydrated()) {
-			//data found?
-			if(!$data = $this->kernel->orm->query($this, $where)) {
-				return false;
-			}
-			//loop through data
-			foreach($data as $k => $v) {
-				//set property?
-				if(isset($this->__meta['props'][$k])) {
-					$this->$k = $v;
+	public final function isValid() {
+		//reset errors
+		$this->__meta['errors'] = [];
+		//loop through props
+		foreach($this->__meta['props'] as $key => $meta) {
+			//get value
+			$val = $this->__meta['props'][$key]['value'];
+			//process custom rules
+			foreach($this->__meta['props'][$key]['rules'] as $rule) {
+				//set vars
+				$error = '';
+				//call validator
+				if(!$this->kernel->validator->isValid($rule, $val, $error)) {
+					$this->addError($key, $error);
 				}
 			}
-			//mark as hydrated
-			$this->__meta['hydrated'] = true;
-			//hydrate hook
-			$this->onHydrate();
 		}
-		//success
-		return true;
+		//validate hook
+		$this->onValidate();
+		//check relations
+		foreach($this->__meta['relations'] as $prop => $meta) {
+			//is relation valid?
+			if($meta['onValidate'] && !$this->$prop->isValid()) {
+				//set errors
+				foreach($this->$prop->errors() as $k => $v) {
+					$this->addError($k, $v);
+				}
+			}
+		}
+		//return
+		return empty($this->__meta['errors']);
+	}
+
+	public final function get(array $where=[]) {
+		//is hydrated?
+		if(!$this->id()) {
+			//start hydrating
+			$this->__meta['hydrating'] = true;
+			//hydrate data
+			$this->kernel->orm->hydrate($this, $where);
+			//finish hydrating
+			$this->__meta['hydrating'] = false;
+		}
+		//return
+		return $this->id();
 	}
 
 	public final function set(array $data) {
+		//setter hook
+		$data = $this->onSet($data);
 		//loop through data
 		foreach($data as $k => $v) {
 			//set property?
@@ -181,10 +163,13 @@ class Model {
 				$this->$k = $v;
 			}
 		}
-		//setter hook
-		$this->onSet($data);
-		//validate data
-		$this->isValid();
+		//check relations
+		foreach($this->__meta['relations'] as $prop => $meta) {
+			//set data?
+			if($meta['onSet']) {
+				$this->$prop->set($data);
+			}
+		}
 		//chain it
 		return $this;
 	}
@@ -199,15 +184,31 @@ class Model {
 			return $this->id ?: false;
 		}
 		//data saved?
-		if($id = $this->kernel->orm->save($this)) {
+		if(!$id = $this->kernel->orm->save($this)) {
+			$this->addError('unknown', 'Unable to save record. Please try again.');
+			return false;
+		}
+		//currently saving?
+		if(!$this->__meta['saving']) {
+			//start saving
+			$this->__meta['saving'] = true;
+			//check relations
+			foreach($this->__meta['relations'] as $prop => $meta) {
+				//save relation now?
+				if($meta['onSave'] && !$this->$prop->save()) {
+					//set errors
+					foreach($this->$prop->errors() as $k => $v) {
+						$this->addError($k, $v);
+					}
+				}
+			}
 			//save hook
 			$this->onSave();
-		} else {
-			//add error
-			$this->addError('unknown', 'Unable to save record. Please try again.');
+			//finish saving
+			$this->__meta['saving'] = false;
 		}
 		//return
-		return ($id && !$this->__meta['errors']) ? $id : false;
+		return empty($this->__meta['errors']) ? $id : false;
 	}
 
 	protected final function addError($key, $val) {
@@ -218,19 +219,18 @@ class Model {
 				$this->__meta['errors'][$key] = [];
 			}
 			//add to array
-			$this->__meta['errors'][$key][] = $val;
+			foreach((array) $val as $v) {
+				//is dupe?
+				if($v && !in_array($v, $this->__meta['errors'][$key])) {
+					$this->__meta['errors'][$key][] = $v;
+				}
+			}
 		} else {
-			//update value
-			$this->__meta['errors'][$key] = $val;
+			//update value?
+			if(!empty($val)) {
+				$this->__meta['errors'][$key] = $val;
+			}
 		}
-	}
-
-	protected final function mergeErrors(array $errors) {
-		//get all errors
-		$errors = func_get_args();
-		//merge errors
-		$this->__meta['errors'] = array_merge($this->__meta['errors'], ...$errors);
-
 	}
 
 	/* HOOK METHODS */
@@ -239,17 +239,17 @@ class Model {
 		return;
 	}
 
-	protected function onHydrate() {
-		return;
-	}
-
 	protected function onSet(array $data) {
-		return;
+		return $data;
 	}
 
 	protected function onFilterVal($key, $val) {
 		//get org value
 		$orgVal = $this->__meta['props'][$key]['value'];
+		//scalar mis-match?
+		if(is_scalar($orgVal) && !is_scalar($val)) {
+			return $orgVal;
+		}
 		//cast by type
 		if(is_string($orgVal)) {
 			$val = trim($val);
@@ -277,22 +277,35 @@ class Model {
 	/* Static helpers */
 
 	public final static function __meta($key=null) {
+		//get class
+		$class = static::class;
 		//generate meta?
-		if(!static::$__metaTpl) {
-			//set vars
+		if(!isset(self::$__metaTpl[$class])) {
+			//meta data
 			$meta = [
 				'id' => 'id',
 				'table' => '',
 				'ignore' => [],
 				'props' => [],
+				'relations' => [],
 				'errors' => [],
 				'errorsArray' => false,
 				'readonly' => false,
-				'constructed' => false,
-				'hydrated' => false,
+				'hydrating' => false,
+				'saving' => false,
+			];
+			//default rel
+			$defRel = [
+				'model' => null,
+				'where' => [],
+				'type' => 'one2one',
+				'lazy' => true,
+				'onSet' => true,
+				'onValidate' => true,
+				'onSave' => true,
 			];
 			//do reflection
-			$refClass = new \ReflectionClass(static::class);
+			$refClass = new \ReflectionClass($class);
 			//parse docblock
 			$docblock = static::parseDocBlock($refClass);
 			//loop through results
@@ -329,49 +342,66 @@ class Model {
 				$docblock = self::parseDocBlock($refProp);
 				//loop through results
 				foreach($docblock as $param => $args) {
+					//is relation?
+					if($param === 'relation') {
+						$defRel['model'] = $param;
+						$meta['relations'][$name] = array_merge($defRel, $args);
+						unset($meta['props'][$name]);
+						break;
+					}
 					//set property meta?
-					if(!empty($args) && isset($meta['props'][$name][$param])) {
+					if(isset($meta['props'][$name][$param])) {
 						$meta['props'][$name][$param] = $args;
 					}
 				}
 			}
-			//set property
-			static::$__metaTpl = $meta;
+			//set template
+			self::$__metaTpl[$class] = $meta;
 		}
 		//return key?
-		if($key && isset(static::$__metaTpl[$key])) {
-			return static::$__metaTpl[$key];
+		if($key && isset(self::$__metaTpl[$class][$key])) {
+			return self::$__metaTpl[$class][$key];
 		}
 		//return
-		return $key ? null : static::$__metaTpl;
+		return $key ? null : self::$__metaTpl[$class];
 	}
 
 	private final static function parseDocBlock($reflection) {
 		//set vars
 		$res = [];
 		$docBlock = $reflection->getDocComment();
+		//build regex
+		$open = '[';
+		$close = ']';
+		$regex = str_replace([ ':open', ':close' ], [ $open, $close ], "/([a-z0-9]+)\:open([^\:close]+)\:close/i");
 		//parse comment
-		if($docBlock && preg_match_all('/([a-z0-9]+)\(([^\)]+)\)/i', $docBlock, $matches)) {
+		if($docBlock && preg_match_all($regex, $docBlock, $matches)) {
 			//loop through matches
 			foreach($matches[1] as $key => $val) {
 				//set vars
 				$args = [];
 				$param = lcfirst(trim($val));
-				$parts = array_map('trim', explode(',', trim($matches[2][$key])));
-				//process args
-				foreach($parts as $k => $v) {
-					//method call?
-					if($v && preg_match('/(::|->)/', $v, $match)) {
-						//parse string
-						$exp = explode($match[1], $v);
-						$b = array_pop($exp);
-						$a = implode($match[1], $exp);
-						//set callback
-						$v = [ $a, $b ];
+				$data = trim($matches[2][$key]);
+				//is json?
+				if($data && $data[0] === '{') {
+					//decode json
+					$args = json_decode($data, true);
+					//is valid?
+					if(empty($args)) {
+						throw new \Exception("Invalid json for model meta parameter $param");
 					}
-					//add arg?
-					if(!empty($v)) {
-						$args[] = $v;
+				} else {
+					//split data
+					$parts = preg_split('/\s+/', $data);
+					$parts = array_map('trim', $parts);
+					//process args
+					foreach($parts as $k => $v) {
+						//remove delims
+						$v = trim(trim($v, "|,"));
+						//add arg?
+						if(!empty($v)) {
+							$args[] = $v;
+						}
 					}
 				}
 				//add to result

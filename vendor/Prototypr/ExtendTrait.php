@@ -8,8 +8,8 @@ trait ExtendTrait {
 
 	public function __call($method, array $args) {
 		//target method exists?
-		if(isset($this->__target) && method_exists($this->__target, $method)) {
-			return $this->__target->$method(...$args);
+		if(method_exists($this, '__target') && method_exists($this->__target(), $method)) {
+			return $this->__target()->$method(...$args);
 		}
 		//extension found?
 		if(isset($this->__calls[$method])) {
@@ -22,7 +22,7 @@ trait ExtendTrait {
 	public final function extend($method, $callable = null) {
 		//set vars
 		$ext = [];
-		$target = isset($this->__target) ? $this->__target : $this;
+		$target = method_exists($this, '__target') ? $this->__target() : $this;
 		//sync class?
 		if(strpos($method, '\\') > 0) {
 			//class data
