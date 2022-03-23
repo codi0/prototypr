@@ -244,20 +244,21 @@ class Model {
 	}
 
 	protected function onFilterVal($key, $val) {
-		//get org value
+		//set vars
+		$type = $this->__meta['props'][$key]['type'];
 		$orgVal = $this->__meta['props'][$key]['value'];
 		//scalar mis-match?
-		if(is_scalar($orgVal) && !is_scalar($val)) {
+		if(is_scalar($orgVal) !== is_scalar($val)) {
 			return $orgVal;
 		}
 		//cast by type
-		if(is_string($orgVal)) {
+		if($type === 'string') {
 			$val = trim($val);
-		} else if(is_int($orgVal)) {
-			$val = intval($val) ?: NULL;
-		} else if(is_numeric($orgVal)) {
-			$val = floatval($val) ?: NULL;
-		} else if(is_array($orgVal)) {
+		} else if($type === 'integer') {
+			$val = intval($val);
+		} else if($type === 'double') {
+			$val = floatval($val);
+		} else if($type === 'array') {
 			$val = (array) ($val ?: []);
 		} else {
 			$val = $val ?: NULL;
@@ -298,7 +299,7 @@ class Model {
 			$defRel = [
 				'model' => null,
 				'where' => [],
-				'type' => 'one2one',
+				'type' => 'hasOne',
 				'lazy' => true,
 				'onSet' => true,
 				'onValidate' => true,
@@ -332,9 +333,13 @@ class Model {
 				}
 				//get prop name
 				$name = $refProp->getName();
+				//get default value
+				$defVal = $refClass->getDefaultProperties()[$name];
 				//add to meta data
 				$meta['props'][$name] = [
-					'value' => $refClass->getDefaultProperties()[$name],
+					'type' => gettype($defVal), 
+					'value' => $defVal,
+					'null' => true,
 					'filters' => [],
 					'rules' => [],
 				];

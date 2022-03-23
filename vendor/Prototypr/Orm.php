@@ -30,18 +30,12 @@ class Orm {
 
 	public function create($name, array $opts=[]) {
 		//set vars
-		$relations = [];
-		$idField = 'id';
 		$class = $this->formatClass($name);
-		//has meta?
-		if(method_exists($class, '__meta')) {
-			$idField = $class::__meta('id');
-			$relations = $class::__meta('relations');
-		}
+		$meta = $this->classMeta($class);
 		//check ID cache?
-		if(isset($opts[$idField]) && $opts[$idField]) {
+		if(isset($opts[$meta['id']]) && $opts[$meta['id']]) {
 			//get cache key
-			$idCacheKey = $this->formatKey($class, [ $idField => $opts[$idField] ]);
+			$idCacheKey = $this->formatKey($class, [ $meta['id'] => $opts[$meta['id']] ]);
 			//cache hit?
 			if(isset($this->modelCache[$idCacheKey])) {
 				return $this->modelCache[$idCacheKey];
@@ -50,13 +44,13 @@ class Orm {
 		//pass kernel
 		$opts['kernel'] = $this->kernel;
 		//has relations?
-		if(!empty($relations)) {
+		if($meta['relations']) {
 			//create model
 			$refClass  = new \ReflectionClass($class);
 			$model = $refClass->newInstanceWithoutConstructor();
 			//sync relations
-			foreach($relations as $prop => $meta) {
-				$model->$prop = $this->syncRelation($model, $prop, $meta);
+			foreach($meta['relations'] as $k => $v) {
+				$model->$k = $this->syncRelation($model, $k, $v);
 			}
 			//call constructor
 			$ctor = $refClass->getConstructor();
@@ -66,8 +60,8 @@ class Orm {
 			$model = new $class($opts);
 		}
 		//update ID cache?
-		if(isset($model->$idField) && $model->$idField) {
-			$idCacheKey = $this->formatKey($class, [ $idField => $model->$idField ]);
+		if($model->{$meta['id']}) {
+			$idCacheKey = $this->formatKey($class, [ $meta['id'] => $model->{$meta['id']} ]);
 			$this->modelCache[$idCacheKey] = $model;
 		}
 		//return
@@ -80,10 +74,10 @@ class Orm {
 		$idCacheKey = null;
 		$conCacheKey = null;
 		$class = $this->formatClass($name);
-		$idField = $this->idField($class);
+		$meta = $this->classMeta($class);
 		//convert to array?
 		if(!is_array($conditions)) {
-			$conditions = $conditions ? [ $idField => $conditions ] : [];
+			$conditions = $conditions ? [ $meta['id'] => $conditions ] : [];
 		}
 		//check if all conditions empty?
 		if(!array_filter($conditions, function($item) { return !empty($item); })) {
@@ -94,8 +88,8 @@ class Orm {
 			//generate con cache key
 			$conCacheKey = $this->formatKey($class, $conditions);
 			//generate ID cache key?
-			if(isset($conditions[$idField]) && $conditions[$idField]) {
-				$idCacheKey = $this->formatKey($class, [ $idField => $conditions[$idField] ]);
+			if(isset($conditions[$meta['id']]) && $conditions[$meta['id']]) {
+				$idCacheKey = $this->formatKey($class, [ $meta['id'] => $conditions[$meta['id']] ]);
 			}
 			//check cache keys
 			foreach([ $idCacheKey, $conCacheKey ] as $key) {
@@ -109,8 +103,8 @@ class Orm {
 				//pass conditions
 				$data = $conditions;
 				//remove id field?
-				if(isset($data[$idField])) {
-					unset($data[$idField]);
+				if(isset($data[$meta['id']])) {
+					unset($data[$meta['id']]);
 				}
 			}
 		}
@@ -139,21 +133,15 @@ class Orm {
 
 	public function hydrate($model, array $conditions) {
 		//set vars
-		$relations = [];
-		$idField = 'id';
 		$class = get_class($model);
-		//has meta?
-		if(method_exists($class, '__meta')) {
-			$idField = $class::__meta('id');
-			$relations = $class::__meta('relations');
-		}
+		$meta = $this->classMeta($class);
 		//query data?
-		if(!$data = $this->doQuery($model, $conditions)) {
+		if(!$data = $this->doQuery($class, $conditions)) {
 			//pass conditions
 			$data = $conditions;
 			//remove id field?
-			if(isset($data[$idField])) {
-				unset($data[$idField]);
+			if(isset($data[$meta['id']])) {
+				unset($data[$meta['id']]);
 			}
 		}
 		//set object props
@@ -161,8 +149,8 @@ class Orm {
 			$model->$key = $val;
 		}
 		//update ID cache?
-		if(isset($model->$idField) && $model->$idField) {
-			$idCacheKey = $this->formatKey($class, [ $idField => $model->$idField ]);
+		if($model->{$meta['id']}) {
+			$idCacheKey = $this->formatKey($class, [ $meta['id'] => $model->{$meta['id']} ]);
 			$this->modelCache[$idCacheKey] = $model;
 		}
 		//update con cache?
@@ -171,8 +159,8 @@ class Orm {
 			$this->modelCache[$conCacheKey] = $model;
 		}
 		//sync relations
-		foreach($relations as $prop => $meta) {
-			$model->$prop = $this->syncRelation($model, $prop, $meta);
+		foreach($meta['relations'] as $k => $v) {
+			$model->$k = $this->syncRelation($model, $k, $v);
 		}
 		//return
 		return $model;
@@ -182,26 +170,18 @@ class Orm {
 		//set vars
 		$data = [];
 		$result = null;
-		$relations = [];
-		$idField = 'id';
-		$ignoreFields = [];
 		$class = get_class($model);
 		$table = $this->dbTable($class);
-		//has meta?
-		if(method_exists($class, '__meta')) {
-			$idField = $class::__meta('id');
-			$relations = $class::__meta('relations');
-			$ignoreFields = $class::__meta('ignore');
-		}
+		$meta = $this->classMeta($class);
 		//valid model?
-		if(!property_exists($model, $idField)) {
-			throw new \Exception("Model cannot be saved without an ID field: $idField");
+		if(!property_exists($model, $meta['id'])) {
+			throw new \Exception("Model cannot be saved without an ID field: " . $meta['id']);
 		}
 		//cache keys
 		$changeCacheKey = spl_object_hash($model);
-		$modelCacheKey = $this->formatKey($class, [ $idField => $model->$idField ]);
+		$modelCacheKey = $this->formatKey($class, [ $meta['id'] => $model->{$meta['id']} ]);
 		//get public data
-		if($model instanceOf Model && $model->$idField) {
+		if($model instanceOf Model && $model->{$meta['id']}) {
 			//use change cache?
 			if(isset($this->changeCache[$changeCacheKey])) {
 				$data = $this->changeCache[$changeCacheKey];
@@ -225,12 +205,12 @@ class Orm {
 		//filter data
 		foreach($data as $k => $v) {
 			//remove from array?
-			if($k === $idField || in_array($k, $ignoreFields) || is_object($v)) {
+			if($k === $meta['id'] || in_array($k, $meta['ignore']) || is_object($v)) {
 				unset($data[$k]);
 				continue;
 			}
-			//null zero?
-			if($v === 0) {
+			//null field?
+			if(empty($v) && isset($meta['props'][$k]) && $meta['props'][$k]['null']) {
 				$data[$k] = NULL;
 				continue;
 			}
@@ -250,15 +230,15 @@ class Orm {
 			//save event
 			$data = $this->kernel->event('orm.save', $data, $model);
 			//save data
-			if($model->$idField) {
+			if($model->{$meta['id']}) {
 				//update query
-				$result = $this->kernel->db->update($table, $data, [ $idField => $model->$idField ]);
+				$result = $this->kernel->db->update($table, $data, [ $meta['id'] => $model->{$meta['id']} ]);
 			} else {
 				//insert query
 				$result = $this->kernel->db->insert($table, $data);
 				//cache insert ID?
 				if($result !== false) {
-					$model->$idField = $this->kernel->db->insert_id;
+					$model->{$meta['id']} = $this->kernel->db->insert_id;
 				}
 			}
 			//update caches?
@@ -268,13 +248,13 @@ class Orm {
 				//reset change cache
 				$this->changeCache[$changeCacheKey] = [];
 				//sync relations
-				foreach($relations as $prop => $meta) {
-					$model->$prop = $this->syncRelation($model, $prop, $meta);
+				foreach($meta['relations'] as $k => $v) {
+					$model->$k = $this->syncRelation($model, $k, $v);
 				}
 			}
 		}
 		//return
-		return ($model->$idField && $result !== false) ? $model->$idField : false;
+		return ($result !== false && $model->{$meta['id']}) ? $model->{$meta['id']} : false;
 	}
 
 	public function onChange($model, $key, $val) {
@@ -294,15 +274,11 @@ class Orm {
 			$table = $name;
 			$namespace = $this->namespace;
 		} else {
-			//set vars
 			$class = $this->formatClass($name);
+			$meta = $this->classMeta($class);
+			$table = $meta['table'] ?: $this->tableName;
 			$namespace = strtolower(explode('\\', $class)[0]);
 			$name = strtolower(preg_replace('/(?<!^)[A-Z]/', '_$0', $name));
-			$table = $this->tableName;
-			//check class meta?
-			if(method_exists($class, '__meta')) {
-				$table = $class::__meta('table') ?: $table;
-			}
 		}
 		//update placeholders
 		$table = str_replace([ '{namespace}', '{name}' ], [ $namespace, $name ], $table);
@@ -311,19 +287,6 @@ class Orm {
 	}
 
 	protected function doQuery($name, array $conditions=[], $collection=false) {
-		//is object?
-		if(is_object($name)) {
-			//get class name
-			$class = get_class($name);
-			//set conditions?
-			if(!$collection && !$conditions) {
-				$idField = $this->idField($class);
-				$idValue = isset($name->$idField) ? $name->$idField : null;
-				$conditions = $idValue ? [ $idField => $idValue ] : [];
-			}
-			//reset name
-			$name = $class;
-		}
 		//set vars
 		$result = [];
 		$whereSql = [];
@@ -404,15 +367,24 @@ class Orm {
 		return $relation;
 	}
 
-	protected function idField($class) {
-		//set vars
-		$res = 'id';
-		//check class meta?
+	protected function classMeta($class) {
+		//has class meta?
 		if(method_exists($class, '__meta')) {
-			$res = $class::__meta('id') ?: $res;
+			return $class::__meta();
 		}
-		//return
-		return $res;
+		//default
+		return [
+			'id' => 'id',
+			'table' => '',
+			'ignore' => [],
+			'props' => [],
+			'relations' => [],
+			'errors' => [],
+			'errorsArray' => false,
+			'readonly' => false,
+			'hydrating' => false,
+			'saving' => false,
+		];
 	}
 
 	protected function formatClass($name) {
