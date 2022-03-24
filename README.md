@@ -87,9 +87,39 @@ $this->queue('css', 'assets/css/app.css');
 $this->queue('js', 'assets/js/app.js');
 ```
 
-## Model auto-wiring
+## Model annotations
 
-TO-DO
+If creating models by extending the \Prototypr\Model class, annotations can be used to automatically configure various behaviours and to track changes for optimised db updates (currently only hasOne and hasMany relations are supported). Any public property of a model (that is not marked as a relation or marked as ignored) is treated as a change-tracked property. 
+
+```
+/**
+ * @id[ id ]
+ * @table[ my_table_name ]
+ * @ignore[ date_created, date_added ]
+**/
+class User extends \Prototypr\Model {
+
+  public $id;
+  
+  /**
+   * @null[ false ]
+   * @rules[ email ]
+   * @filters[ strtolower nowhitespace ]
+  **/
+  public $email = '';
+  
+  /**
+   * Relations are defined using json syntax, inside the @json attribute
+   * @relation[ { "model": "UserAddress", "type": "hasOne", "where": { "user_id": ":id" } ]
+  **/
+  public $address;
+  
+  public $date_created;
+  
+  public $date_updated;
+
+}
+```
 
 ## Core API methods
 
