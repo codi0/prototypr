@@ -109,8 +109,10 @@ class User extends \Prototypr\Model {
   public $email = '';
   
   /**
-   * Relations are defined using json syntax, inside the @json attribute
-   * @relation[ { "model": "UserAddress", "type": "hasOne", "where": { "user_id": ":id" } ]
+   * Relations are defined using json syntax, inside the @relation attribute
+   * By default, relations auto-cascade when $this->set(), $this->isValid() and $this->save() are called (configurable, as below)
+   *
+   * @relation[ { "model": "UserAddress", "type": "hasOne", "where": { "user_id": ":id" }, "onSet": true, "onValidate": true, "onSave": true } ]
   **/
   public $address;
   
