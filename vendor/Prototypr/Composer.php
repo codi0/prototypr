@@ -4,6 +4,7 @@ namespace Prototypr;
 
 class Composer {
 
+	protected $kernel;
 	protected $packages = [];
 	protected $isProduction = true;
 
@@ -42,6 +43,10 @@ class Composer {
 					$this->$k = $v;
 				}
 			}
+		}
+		//set base dir?
+		if($this->kernel && !isset($opts['baseDir'])) {
+			$this->baseDir = $this->kernel->config('base_dir');
 		}
 		//disable detect unicode
 		ini_set('detect_unicode', 0);

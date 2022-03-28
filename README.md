@@ -33,6 +33,7 @@ Designed to run seamlessly in multiple contexts, with a single codebase and mini
 \Prototypr\Kernel    # Contains core application API methods
 \Prototypr\Api       # Creates a standalone API server
 \Prototypr\Composer  # Automatically syncs external dependencies defined in /composer.json
+\Prototypr\Crypt     # Cryptographic utility class
 \Prototypr\Db        # Extends the PDO class to create an api compatible with $wpdb
 \Prototypr\Model     # Provides a base model to deal with CRUD operations
 \Prototypr\Orm       # A simple query store of models by ID or other WHERE conditions

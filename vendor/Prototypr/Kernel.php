@@ -224,39 +224,6 @@ namespace Prototypr {
 					}
 				}
 			}));
-			//default services
-			$this->services = array_merge([
-				'api' => function(array $opts, $class) {
-					//create object
-					return new $class($opts);
-				},
-				'composer' => function(array $opts, $class) {
-					//create object
-					return new $class(array_merge([
-						'baseDir' => $this->config('base_dir'),
-					], $opts));
-				},
-				'db' => function(array $opts, $class) {
-					//create object
-					return new $class($opts);
-				},
-				'orm' => function(array $opts, $class) {
-					//create object
-					return new $class($opts);
-				},
-				'platform' => function(array $opts, $class) {
-					//create object
-					return new $class($opts);
-				},
-				'validator' => function(array $opts, $class) {
-					//create object
-					return new $class($opts);
-				},
-				'view' => function(array $opts, $class) {
-					//create object
-					return new $class($opts);
-				},
-			], $this->services);
 			//sync composer
 			$this->composer->sync();
 			//check platform
@@ -324,14 +291,13 @@ namespace Prototypr {
 		}
 
 		public function __isset($key) {
-			//is service?
-			return isset($this->services[$key]);
+			return !!$this->service($key);
 		}
 
 		public function __get($key) {
-			//is service?
-			if(isset($this->services[$key])) {
-				return $this->service($key);
+			//service found?
+			if($service = $this->service($key)) {
+				return $service;
 			}
 			//not found
 			throw new \Exception("Service $key not found");
@@ -546,7 +512,16 @@ namespace Prototypr {
 			}
 			//has service?
 			if(!isset($this->services[$name])) {
-				return null;
+				//get library class
+				$class = __NAMESPACE__ . '\\' . ucfirst($name);
+				//class exists?
+				if(!class_exists($class)) {
+					return null;
+				}
+				//create service closure
+				$this->services[$name] = function(array $opts, $class) {
+					return new $class($opts);
+				};
 			}
 			//execute closure?
 			if($this->services[$name] instanceof \Closure) {
