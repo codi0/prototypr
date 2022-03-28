@@ -116,6 +116,18 @@ class Validator {
 		}
 	}
 
+	protected function ruleDateFormat($value, $format='Y-m-d') {
+		//has value?
+		if($value) {
+			//convert to datetime
+			$d = \DateTime::createFromFormat($format, $value);
+			//format matches?
+			if(!$d || $d->format($format) !== $value) {
+				return 'valid date format required (' . $format . ')';
+			}
+		}	
+	}
+
 	protected function filterNowhitespace($value) {
 		return preg_replace('/s+/', '', $value);
 	}

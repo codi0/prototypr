@@ -8,6 +8,7 @@ class Api {
 
 	protected $data = [];
 	protected $errors = [];
+	protected $devMethods = [];
 
 	protected $basePath = '/';
 	protected $jsonReqBody = '';
@@ -58,6 +59,7 @@ class Api {
 				//is json?
 				if(is_array($decode)) {
 					$_POST = $decode;
+					$_REQUEST = array_merge($_GET, $_POST, $_COOKIE);
 					$this->jsonReqBody = $body;
 				}
 			}
@@ -92,6 +94,10 @@ class Api {
 				//format auth?
 				if($route['auth']) {
 					$route['auth'] = [ $this, 'auth' ];
+				}
+				//add dev methods?
+				if($this->devMethods && $route['methods'] && $this->kernel->isEnv('dev')) {
+					$route['methods'] = array_unique(array_merge($route['methods'], $this->devMethods));
 				}
 				//add route
 				$this->kernel->route($route);

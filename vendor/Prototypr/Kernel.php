@@ -1227,7 +1227,7 @@ namespace Prototypr {
 			//check queries?
 			if(isset($this->services['db']) && !($this->services['db'] instanceOf \Closure)) {
 				//count queries
-				$data['queries'] = count($this->db->queries);
+				$data['queries'] = $this->db->num_queries;
 				//get query log
 				$data['queries_log'] = array_map(function($item) {
 					return preg_replace("/\s+/", " ", $item);

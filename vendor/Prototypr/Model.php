@@ -248,7 +248,7 @@ class Model {
 		$type = $this->__meta['props'][$key]['type'];
 		$orgVal = $this->__meta['props'][$key]['value'];
 		//scalar mis-match?
-		if(is_scalar($orgVal) !== is_scalar($val)) {
+		if(!is_null($orgVal) && is_scalar($orgVal) !== is_scalar($val)) {
 			return $orgVal;
 		}
 		//cast by type
