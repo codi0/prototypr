@@ -180,7 +180,7 @@ class View {
 				$html = str_replace('</head>', $head . '</head>', $html);
 			}
 			//filter output
-			$html = $this->kernel->event('output.html', $html);
+			$html = $this->kernel->event('app.html', $html);
 		}
 		//display
 		echo $html;

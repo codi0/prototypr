@@ -115,12 +115,11 @@ class Model {
 			$val = $this->__meta['props'][$key]['value'];
 			//process custom rules
 			foreach($this->__meta['props'][$key]['rules'] as $rule) {
-				//set vars
-				$error = '';
-				//call validator
-				if(!$this->kernel->validator->isValid($rule, $val, $error)) {
-					$this->addError($key, $error);
-				}
+				$this->kernel->validator->isValid($rule, $val);
+			}
+			//process validation errors
+			foreach($this->kernel->validator->errors() as $error) {
+				$this->addError($key, $error);
 			}
 		}
 		//validate hook

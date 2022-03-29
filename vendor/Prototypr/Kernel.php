@@ -5,7 +5,7 @@ namespace {
 	require_once(__DIR__ . '/ExtendTrait.php');
 
 	function prototypr($opts=[]) {
-		return \Prototypr\Kernel::instance($opts);
+		return \Prototypr\Kernel::factory($opts);
 	}
 
 }
@@ -46,7 +46,7 @@ namespace Prototypr {
 			500 => 'Internal Server Error',
 		];
 
-		public final static function instance($opts=[]) {
+		public final static function factory($opts=[]) {
 			//format opts?
 			if(!is_array($opts)) {
 				$opts = [ 'instance' => $opts ];
@@ -322,6 +322,10 @@ namespace Prototypr {
 			return $callable;
 		}
 
+		public function class($name) {
+			return $this->config($name . '_class') ?: __NAMESPACE__ . '\\' . ucfirst($name);
+		}
+
 		public function path($path='', array $opts=[]) {
 			//set vars
 			$baseDir = $this->config('base_dir');
@@ -513,7 +517,7 @@ namespace Prototypr {
 			//has service?
 			if(!isset($this->services[$name])) {
 				//get library class
-				$class = __NAMESPACE__ . '\\' . ucfirst($name);
+				$class = $this->class($name);
 				//class exists?
 				if(!class_exists($class)) {
 					return null;
@@ -525,8 +529,8 @@ namespace Prototypr {
 			}
 			//execute closure?
 			if($this->services[$name] instanceof \Closure) {
-				//get class
-				$class = $this->config($name . '_class') ?: __NAMESPACE__ . '\\' . ucfirst($name);
+				//get lib class
+				$class = $this->class($name);
 				//get opts
 				$opts = $this->config($name . '_opts') ?: [];
 				//add kernel
@@ -835,7 +839,7 @@ namespace Prototypr {
 				}
 			}
 			//filter output
-			$data = $this->event('output.json', $data);
+			$data = $this->event('app.json', $data);
 			//set content-type
 			header("Content-Type: application/json");
 			//display
@@ -936,6 +940,86 @@ namespace Prototypr {
 			}
 			//return
 			return $response;
+		}
+
+		public function mail($to, $subject, $body, array $opts=[]) {
+			//set vars
+			$headers = '';
+			//set defaults
+			$opts = array_merge([
+				'subject' => trim($subject),
+				'body' => trim($body),
+				'to' => trim($to),
+				'to_name' => '',
+				'from' => $this->config('mail_from') ?: 'no-reply@' . $this->input('SERVER.HTTP_HOST'),
+				'from_name' => $this->config('mail_name') ?: $this->config('name'),
+				'headers' => [],
+				'html' => null,
+			], $opts);
+			//is html?
+			if($opts['html'] === null) {
+				$opts['html'] = strip_tags($opts['body']) !== $opts['body'];
+			}
+			//add lines breaks?
+			if($opts['html'] && strip_tags($opts['body']) === strip_tags($opts['body'], '<p><br><div><table>')) {
+				$opts['body'] = str_replace("\n", "\n<br>\n", $opts['body']);
+			}
+			//resolve placeholders
+			foreach($opts as $k => $v) {
+				if(is_scalar($v)) {
+					$opts['subject'] = str_replace('%' . $k . '%', $v, $opts['subject']);
+					$opts['body'] = str_replace('%' . $k . '%', $v, $opts['body']);
+				}
+			}
+			//default headers
+			$opts['headers'] = array_merge([
+				'From' => $opts['from_name'] ? ($opts['from_name'] . ' <' . $opts['from'] . '>') : $opts['from'],
+				'Reply-To' => $opts['from'],
+				'Content-Type' => $opts['html'] ? 'text/html; charset=utf-8' : 'text/plain; charset=utf-8',
+				'MIME-Version' => $opts['html'] ? '1.0' : '',
+			], $opts['headers']);
+			//mail event
+			$opts = $this->event('app.mail', $opts);
+			//return now?
+			if(!is_array($opts)) {
+				return !!$opts;
+			}
+			//convert headers to string
+			foreach($opts['headers'] as $k => $v) {
+				if(!empty($v)) {
+					$headers .= ucfirst($k) . ': ' . $v . "\r\n";
+				}
+			}
+			//valid from mail?
+			if(!filter_var($opts['from'], FILTER_VALIDATE_EMAIL)) {
+				throw new \Exception("From email not set");
+			}
+			//use safe mode?
+			if(ini_get('safe_mode')) {
+				return mail($opts['to'], $opts['subject'], $opts['body'], $headers);
+			} else {
+				return mail($opts['to'], $opts['subject'], $opts['body'], $headers, '-f' . $opts['from']);
+			}
+		}
+
+		public function form($name, $method='post', $action='') {
+			//get library class
+			$class = $this->class('form');
+			//format opts
+			if(is_array($method)) {
+				$opts = $method;
+			} else {
+				$opts = [
+					'attr' => [
+						'method' => $method,
+						'action' => $action,
+					],
+				];
+			}
+			//add kernel
+			$opts['kernel'] = $this;
+			//create form
+			return $class::factory($name, $opts);
 		}
 
 		public function model($name, $data=[], $find=true) {

@@ -78,7 +78,9 @@ class Api extends \Prototypr\Api {
 	}
 
 	protected function formatResponse(array $response) {
-		//TO-DO: format json response here
+		//call parent
+		$response = parent::formatResponse($response);
+		//TO-DO: any additional formatting here
 		return $response;
 	}
 

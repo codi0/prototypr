@@ -33,8 +33,11 @@ Designed to run seamlessly in multiple contexts, with a single codebase and mini
 \Prototypr\Kernel    # Contains core application API methods
 \Prototypr\Api       # Creates a standalone API server
 \Prototypr\Composer  # Automatically syncs external dependencies defined in /composer.json
-\Prototypr\Crypt     # Cryptographic utility class
+\Prototypr\Crypt     # Cryptography helper class
 \Prototypr\Db        # Extends the PDO class to create an api compatible with $wpdb
+\Prototypr\Dom       # DOM helper class, using css selectors to transform html
+\Prototypr\Form      # Form helper class, to build forms programatically
+\Prototypr\Html      # HTML helper class, to build common elements programatically
 \Prototypr\Model     # Provides a base model to deal with CRUD operations
 \Prototypr\Orm       # A simple query store of models by ID or other WHERE conditions
 \Prototypr\Platform  # Checks the platform the code is run on (E.g. in WordPress context, uses $wpdb)
@@ -131,6 +134,7 @@ class User extends \Prototypr\Model {
 
 $this->isEnv($env)
 $this->bind($fn, $thisObj = NULL)
+$this->class($name)
 $this->path($path = '', array $opts = [])
 $this->url($path = '', array $opts = [])
 $this->config($key = NULL, $val = NULL)
@@ -147,6 +151,8 @@ $this->clean($value, $context = 'html')
 $this->tpl($name, array $data = [], $code = NULL)
 $this->json($data, $code = NULL)
 $this->http($url, array $opts = [])
+$this->mail($to, $subject, $body, array $opts = [])
+$this->form($name, $method = 'post', $action = '')
 $this->model($name, array $data = [], $find = true)
 $this->schedule($name, $fn = NULL, $interval = 3600, $reset = FALSE)
 $this->cron($job = NULL)
@@ -178,6 +184,12 @@ $this->db->replace($table, array $data)
 $this->db->update($table, array $data, array $where = [])
 $this->db->delete($table, array $where = [])
 $this->db->schema($sqlSchemaOrFile)
+
+$this->dom # TO-DO: List methods
+
+$form # TO-DO: List methods
+
+$this->html # TO-DO: List methods
 
 $model->id()  # Returns value of ID field
 $model->toArray()  # Get all model data as an array

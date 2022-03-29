@@ -56,6 +56,10 @@ return prototypr([
 		//Whether to log php errors to "/data/logs/" directory (if FALSE, default php error log location will be used)
 		'custom_error_log' => TRUE,
 
+		//mail from details
+		'mail_from' => '',
+		'mail_name' => '',
+
 		//Database login
 		'db_opts' => [
 			'host' => 'localhost',

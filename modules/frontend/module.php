@@ -7,6 +7,17 @@
 **/
 
 
+//example dom manipulation
+$this->event('app.html', function($html) {
+	//load DOM
+	$this->dom->load($html);
+	//add child
+	$this->dom->select('#app')->insertChild('<p>This paragraph was inserted by the DOM service.</p>');
+	//return html
+	return $this->dom->save();
+});
+
+
 //Route: Home
 $this->route('/', function() {
 	//load template
