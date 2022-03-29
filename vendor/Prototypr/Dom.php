@@ -2,7 +2,7 @@
 
 namespace Prototypr;
 
-class Node {
+class DomNode {
 
 	public $node;
 
@@ -689,7 +689,7 @@ class Node {
 
 }
 
-class Dom extends Node {
+class Dom extends DomNode {
 
 	protected $dom;
 
@@ -779,7 +779,7 @@ class Dom extends Node {
 		//reset node
 		$this->node = null;
 		//translate to xpath
-		$query = Xpath::fromSelector($selector);
+		$query = DomXpath::fromSelector($selector);
 		//run query
 		return $this->query($query);
 	}
@@ -880,7 +880,7 @@ class Dom extends Node {
 }
 
 //Adapted from: http://www.github.com/bkdotcom/CssXpath
-class Xpath {
+class DomXpath {
 
 	private static $cache = [];
 	private static $strings = [];
