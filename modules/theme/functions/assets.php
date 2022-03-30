@@ -5,7 +5,7 @@
  * Any php files added to the theme functions directory will be automatically loaded
  *
  * $this references the View object
- * $this->app can be used to access the core
+ * $this->kernel can be used to access the core
  *
 **/
 
