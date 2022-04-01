@@ -147,6 +147,7 @@ class Db extends \PDO {
 		return $res ?: [];
 	}
 
+	#[\ReturnTypeWillChange]
 	public function prepare($statement, $options = NULL) {
 		//format options?
 		if(is_string($options) || is_numeric($options)) {
@@ -168,6 +169,7 @@ class Db extends \PDO {
 		return $statement;
 	}
 
+	#[\ReturnTypeWillChange]
 	public function query($query, $fetchMode = NULL, ...$fetchModeArgs) {
 		//set vars
 		$res = false;

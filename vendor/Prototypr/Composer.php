@@ -19,9 +19,9 @@ class Composer {
 		'COMPOSER_BIN_DIR' => '%composer_dir%/bin',
 		'COMPOSER_CACHE_DIR' => '%composer_dir%/cache',
 		'COMPOSER' => '%base_dir%/composer.json',
-		'COMPOSER_PROCESS_TIMEOUT' => null,
-		'COMPOSER_DISCARD_CHANGES' => null,
-		'COMPOSER_NO_INTERACTION' => null,
+		'COMPOSER_PROCESS_TIMEOUT' => '',
+		'COMPOSER_DISCARD_CHANGES' => '',
+		'COMPOSER_NO_INTERACTION' => '',
 	];
 
 	protected $productionArgs = [
@@ -55,7 +55,7 @@ class Composer {
 			//replace keys
 			$this->env[$k] = str_replace([ '%base_dir%', '%vendor_dir%', '%composer_dir%', '\\' ], [ $this->baseDir, $this->env['COMPOSER_VENDOR_DIR'], $this->env['COMPOSER_HOME'], '/' ], $v);
 			//set value?
-			if($this->env[$k] !== '') {
+			if($this->env[$k]) {
 				putenv($k . "=" . $this->env[$k]);
 			}
 		}
