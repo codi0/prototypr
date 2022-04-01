@@ -840,8 +840,10 @@ namespace Prototypr {
 			}
 			//filter output
 			$data = $this->event('app.json', $data);
-			//set content-type
-			header("Content-Type: application/json");
+			//set content-type?
+			if(!ob_get_contents()) {
+				header("Content-Type: application/json");
+			}
 			//display
 			echo json_encode($data, JSON_PRETTY_PRINT);
 		}
