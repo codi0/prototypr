@@ -4,25 +4,13 @@ namespace Prototypr;
 
 class Validator {
 
+	use ConstructTrait;
+
 	protected $rules = [];
 	protected $filters = [];
 	protected $errors = [];
 
-	protected $kernel;
-
-	public function __construct(array $opts=[], $merge=true) {
-		//set opts
-		foreach($opts as $k => $v) {
-			//property exists?
-			if(property_exists($this, $k)) {
-				//is array?
-				if($merge && $this->$k === (array) $this->$k) {
-					$this->$k = array_merge($this->$k, $v);
-				} else {
-					$this->$k = $v;
-				}
-			}
-		}
+	protected function onConstruct(array $opts) {
 		//get methods
 		$methods = get_class_methods($this);
 		//loop through methods

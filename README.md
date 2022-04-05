@@ -14,11 +14,9 @@ Designed to run seamlessly in multiple contexts, with a single codebase and mini
 ## App structure
 
 ```
-/data/
-  /cache/       # Any calls to $this->cache($key, $val) stored here
-  /config/      # Any global config options can be stored here (php array in .php files)
-  /logs/        # Any calls to $this->log($name, $data) stored here
-  /schemas/     # Any .sql files stored here executed on app install (if 'version' config set)
+/cache/       # Any calls to $this->cache($key, $val) stored here
+/config/      # Any global config options can be stored here (php array in .php files)
+/logs/        # Any calls to $this->log($name, $data) stored here
 /modules/
   [moduleName]  # App logic stored in modules, loaded at run-time
     /module.php
@@ -38,6 +36,7 @@ Designed to run seamlessly in multiple contexts, with a single codebase and mini
 \Prototypr\Dom       # DOM helper class, using css selectors to transform html
 \Prototypr\Form      # Form helper class, to build forms programatically
 \Prototypr\Html      # HTML helper class, to build common elements programatically
+\Prototypr\Meta      # Parses meta data for a class, function, method or property
 \Prototypr\Model     # Provides a base model to deal with CRUD operations
 \Prototypr\Orm       # A simple query store of models by ID or other WHERE conditions
 \Prototypr\Platform  # Checks the platform the code is run on (E.g. in WordPress context, uses $wpdb)
@@ -140,6 +139,7 @@ $this->url($path = '', array $opts = [])
 $this->config($key = NULL, $val = NULL)
 $this->platform($key = NULL, $val = NULL)
 $this->module($name)
+$this->facade($name, $instance)  # Creates a static class facade around any object
 $this->service($name, $obj = NULL)  # Any services defined also accessible as $this->{serviceName}
 $this->extend($method, $fn)  # Extension methods accessible as $this->{methodName}(...$args)
 $this->event($name, $params = NULL, $remove = FALSE)
@@ -185,11 +185,13 @@ $this->db->update($table, array $data, array $where = [])
 $this->db->delete($table, array $where = [])
 $this->db->schema($sqlSchemaOrFile)
 
-$this->dom # TO-DO: List methods
+$this->dom  # TO-DO: List methods
 
-$form # TO-DO: List methods
+$form  # TO-DO: List methods
 
-$this->html # TO-DO: List methods
+$this->html  # TO-DO: List methods
+
+Meta  # TO-DO: List methods
 
 $model->id()  # Returns value of ID field
 $model->toArray()  # Get all model data as an array
@@ -201,7 +203,8 @@ $model->set(array $data)  # Set array of data (does not save)
 $model->save()  # Save model state, if validation passed
 $model->onConstruct(array $opts)  # Called at the end of the constructor
 $model->onSet(array $data)  # Filters $data at the start of the set method
-$model->onFilterVal($key, $value)  # Filters updated property $value
+$model->onFilter($key, $val)  # Filters updated property $value
+$model->onChange($key, $val)  # Internal listener for property updates
 $model->onValidate()  # Called during validation, to define custom rules
 $model->onSave()  # Called after model state successfully saved
 

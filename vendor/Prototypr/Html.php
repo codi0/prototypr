@@ -4,22 +4,7 @@ namespace Prototypr;
 
 class Html {
 
-	protected $kernel;
-
-	public function __construct(array $opts=[], $merge=true) {
-		//set opts
-		foreach($opts as $k => $v) {
-			//property exists?
-			if(property_exists($this, $k)) {
-				//is array?
-				if($merge && $this->$k === (array) $this->$k) {
-					$this->$k = array_merge($this->$k, $v);
-				} else {
-					$this->$k = $v;
-				}
-			}
-		}
-	}
+	use ConstructTrait;
 
 	public function input($name, $value='', array $opts=[]) {
 		//set opts

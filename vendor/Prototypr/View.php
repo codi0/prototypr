@@ -4,9 +4,9 @@ namespace Prototypr;
 
 class View {
 
+	use ConstructTrait;
 	use ExtendTrait;
 
-	protected $kernel;
 	protected $data = [];
 
 	protected $queue = [
@@ -16,21 +16,6 @@ class View {
 		'css' => [],
 		'js' => [],
 	];
-
-	public function __construct(array $opts=[], $merge=true) {
-		//set opts
-		foreach($opts as $k => $v) {
-			//property exists?
-			if(property_exists($this, $k)) {
-				//is array?
-				if($merge && $this->$k === (array) $this->$k) {
-					$this->$k = array_merge($this->$k, $v);
-				} else {
-					$this->$k = $v;
-				}
-			}
-		}
-	}
 
 	public function queue($type, $content, array $dependencies=[]) {
 		//valid type?
@@ -101,7 +86,17 @@ class View {
 			$data = array_merge([
 				'js' => [],
 				'meta' => [],
+				'theme' => $this->kernel->config('theme'),
 			], $data);
+			//set theme path?
+			if($data['theme']) {
+				//try path
+				$themePath = $this->kernel->config('modules_dir') . '/' . $data['theme'];
+				//path exists?
+				if(!is_dir($themePath)) {
+					$themePath = '';
+				}
+			}
 			//loop through default config vars
 			foreach([ 'base_url', 'env', 'name', 'route.path' ] as $param) {
 				//get value
@@ -117,9 +112,8 @@ class View {
 				$data['meta']['noindex'] = true;
 			}
 			//use theme?
-			if($theme = $this->kernel->config('theme')) {
+			if($themePath) {
 				//update paths
-				$themePath = $this->kernel->config('modules_dir') . '/' . $theme;
 				$tplPath = $themePath . '/layout.tpl';
 				$fnPath = $themePath . '/functions';
 				//load functions?
@@ -199,13 +193,23 @@ class View {
 			}
 			//data exists?
 			if(is_object($data)) {
-				if(isset($data->$part)) {
+				//parse method
+				$exp = explode('(', $part, 2);
+				$method = trim($exp[0]);
+				//parse args
+				$args = isset($exp[1]) ? trim(trim($exp[1], ')')) : [];
+				$args = $args ? array_map('trim', explode(',', $args)) : [];
+				//get data
+				if(strpos($part, '(') > 0 && method_exists($data, $method)) {
+					$data = $data->$method(...$args);
+				} else if(isset($data->$part)) {
 					$data = $data->$part;
 				} else {
 					$data = null;
 					break;
 				}
 			} else {
+				//get data
 				if(isset($data[$part])) {
 					$data = $data[$part];
 				} else {

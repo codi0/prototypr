@@ -88,7 +88,13 @@ class Db extends \PDO {
 		$id = md5(preg_replace('/\s+/', '', $id));
 		//execute query?
 		if(!isset($_cache[$id])) {
-			$s = $s ?: $this->prepare($query, $params);
+			//prepare statement?
+			if(!$s && $params) {
+				$s = $this->prepare($query, $params);
+			} else if(!$s) {
+				$s = $query;
+			}
+			//run query
 			$_cache[$id] = $this->$method($s);
 		}
 		//return

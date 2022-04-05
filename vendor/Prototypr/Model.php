@@ -60,12 +60,14 @@ class Model {
 			$val = $this->kernel->validator->filter($filter, $val);
 		}
 		//filter value
-		$val = $this->onFilterVal($key, $val);
+		$val = $this->onFilter($key, $val);
 		//update value?
 		if($this->__meta['props'][$key]['value'] !== $val) {
 			//set value
 			$this->__meta['props'][$key]['value'] = $val;
-			//notify of change?
+			//notify model
+			$this->onChange($key, $val, $this->__meta['hydrating']);
+			//notify orm?
 			if(!$this->__meta['hydrating']) {
 				$this->kernel->orm->onChange($this, $key, $val);
 			}
@@ -242,7 +244,7 @@ class Model {
 		return $data;
 	}
 
-	protected function onFilterVal($key, $val) {
+	protected function onFilter($key, $val) {
 		//set vars
 		$type = $this->__meta['props'][$key]['type'];
 		$orgVal = $this->__meta['props'][$key]['value'];
@@ -264,6 +266,10 @@ class Model {
 		}
 		//return
 		return $val;	
+	}
+
+	protected function onChange($key, $val, $isHydrating) {
+		return;
 	}
 
 	protected function onValidate() {
@@ -304,12 +310,12 @@ class Model {
 				'onValidate' => true,
 				'onSave' => true,
 			];
-			//do reflection
-			$refClass = new \ReflectionClass($class);
-			//parse docblock
-			$docblock = static::parseDocBlock($refClass);
-			//loop through results
-			foreach($docblock as $param => $args) {
+			//parse meta
+			$parse = Meta::parse($class, [
+				'props' => true,
+			]);
+			//loop through annotations
+			foreach($parse['annotations'] as $param => $args) {
 				//set property meta?
 				if(isset($meta[$param])) {
 					//cast type?
@@ -324,28 +330,22 @@ class Model {
 					}
 				}
 			}
-			//process public properties
-			foreach($refClass->getProperties(\ReflectionProperty::IS_PUBLIC) as $refProp) {
+			//loop through properties
+			foreach($parse['properties'] as $name => $prop) {
 				//skip property?
-				if($refProp->isStatic()) {
+				if($prop['static'] || $prop['scope'] !== 'public') {
 					continue;
 				}
-				//get prop name
-				$name = $refProp->getName();
-				//get default value
-				$defVal = $refClass->getDefaultProperties()[$name];
 				//add to meta data
 				$meta['props'][$name] = [
-					'type' => gettype($defVal), 
-					'value' => $defVal,
+					'type' => $prop['type'],
+					'value' => $prop['value'],
 					'null' => true,
 					'filters' => [],
 					'rules' => [],
 				];
-				//parse docblock
-				$docblock = self::parseDocBlock($refProp);
-				//loop through results
-				foreach($docblock as $param => $args) {
+				//loop through property annotations
+				foreach($prop['annotations'] as $param => $args) {
 					//is relation?
 					if($param === 'relation') {
 						$defRel['model'] = $param;
@@ -368,52 +368,6 @@ class Model {
 		}
 		//return
 		return $key ? null : self::$__metaTpl[$class];
-	}
-
-	private final static function parseDocBlock($reflection) {
-		//set vars
-		$res = [];
-		$docBlock = $reflection->getDocComment();
-		//build regex
-		$open = '[';
-		$close = ']';
-		$regex = str_replace([ ':open', ':close' ], [ $open, $close ], "/([a-z0-9]+)\:open([^\:close]+)\:close/i");
-		//parse comment
-		if($docBlock && preg_match_all($regex, $docBlock, $matches)) {
-			//loop through matches
-			foreach($matches[1] as $key => $val) {
-				//set vars
-				$args = [];
-				$param = lcfirst(trim($val));
-				$data = trim($matches[2][$key]);
-				//is json?
-				if($data && $data[0] === '{') {
-					//decode json
-					$args = json_decode($data, true);
-					//is valid?
-					if(empty($args)) {
-						throw new \Exception("Invalid json for model meta parameter $param");
-					}
-				} else {
-					//split data
-					$parts = preg_split('/\s+/', $data);
-					$parts = array_map('trim', $parts);
-					//process args
-					foreach($parts as $k => $v) {
-						//remove delims
-						$v = trim(trim($v, "|,"));
-						//add arg?
-						if(!empty($v)) {
-							$args[] = $v;
-						}
-					}
-				}
-				//add to result
-				$res[$param] = $args;
-			}
-		}
-		//return
-		return $res;
 	}
 
 }

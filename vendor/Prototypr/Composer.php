@@ -4,7 +4,8 @@ namespace Prototypr;
 
 class Composer {
 
-	protected $kernel;
+	use ConstructTrait;
+
 	protected $packages = [];
 	protected $isProduction = true;
 
@@ -31,19 +32,7 @@ class Composer {
 		'create-project' => [ '--prefer-dist' ],
 	];
 
-	public function __construct(array $opts=[], $merge=true) {
-		//set opts
-		foreach($opts as $k => $v) {
-			//property exists?
-			if(property_exists($this, $k)) {
-				//is array?
-				if($merge && $this->$k === (array) $this->$k) {
-					$this->$k = array_merge($this->$k, $v);
-				} else {
-					$this->$k = $v;
-				}
-			}
-		}
+	protected function onConstruct(array $opts) {
 		//set base dir?
 		if($this->kernel && !isset($opts['baseDir'])) {
 			$this->baseDir = $this->kernel->config('base_dir');

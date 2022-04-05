@@ -2,8 +2,6 @@
 
 namespace {
 
-	require_once(__DIR__ . '/ExtendTrait.php');
-
 	function prototypr($opts=[]) {
 		return \Prototypr\Kernel::factory($opts);
 	}
@@ -113,10 +111,9 @@ namespace Prototypr {
 				//dirs
 				'base_dir' => $baseDir,
 				'vendor_dirs' => [ $baseDir . '/vendor' ],
-				'cache_dir' => $baseDir . '/data/cache',
-				'config_dir' => $baseDir . '/data/config',
-				'logs_dir' => $baseDir . '/data/logs',
-				'schemas_dir' => $baseDir . '/data/schemas',
+				'cache_dir' => $baseDir . '/cache',
+				'config_dir' => $baseDir . '/config',
+				'logs_dir' => $baseDir . '/logs',
 				'modules_dir' => $baseDir . '/modules',
 				//url
 				'ssl' => $ssl,
@@ -130,6 +127,7 @@ namespace Prototypr {
 				'module_loading' => '',
 				//other
 				'instance' => 'default',
+				'namespace' => null,
 				'version' => null,
 				'theme' => null,
 				'custom_error_log' => true,
@@ -263,10 +261,6 @@ namespace Prototypr {
 			if($newV = $this->config['version']) {
 				//get cached version
 				$oldV = $this->cache('version');
-				//sync global db schemas
-				foreach(glob($this->config['schemas_dir'] . '/*.sql') as $file) {
-					$this->db->schema($file);
-				}
 				//new version found?
 				if(!$oldV || $newV > $oldV) {
 					$this->event('app.upgrade', $oldV, $newV);
@@ -323,7 +317,25 @@ namespace Prototypr {
 		}
 
 		public function class($name) {
-			return $this->config($name . '_class') ?: __NAMESPACE__ . '\\' . ucfirst($name);
+			//config class?
+			if($class = $this->config($name . '_class')) {
+				return $class;
+			}
+			//try global namespace?
+			if($ns = $this->config('namespace')) {
+				//add namespace?
+				if($ns && strpos($name, $ns) === 0) {
+					$class = ucfirst($name);
+				} else {
+					$class = $ns . '\\' . ucfirst($name);
+				}
+				//class exists?
+				if(class_exists($class)) {
+					return $class;
+				}
+			}
+			//default
+			return __NAMESPACE__ . '\\' . ucfirst($name);
 		}
 
 		public function path($path='', array $opts=[]) {
@@ -516,30 +528,51 @@ namespace Prototypr {
 			}
 			//has service?
 			if(!isset($this->services[$name])) {
-				//get library class
+				//get class
 				$class = $this->class($name);
 				//class exists?
 				if(!class_exists($class)) {
 					return null;
 				}
 				//create service closure
-				$this->services[$name] = function(array $opts, $class) {
-					return new $class($opts);
+				$this->services[$name] = function($class, $opts) {
+					if($opts && isset($opts[0])) {
+						return new $class(...$opts);
+					} else if($opts) {
+						return new $class($opts);
+					} else {
+						return new $class;
+					}
 				};
 			}
 			//execute closure?
 			if($this->services[$name] instanceof \Closure) {
-				//get lib class
+				//get class
 				$class = $this->class($name);
 				//get opts
 				$opts = $this->config($name . '_opts') ?: [];
-				//add kernel
-				$opts['kernel'] = $this;
+				//inject kernel?
+				if(!$opts || !isset($opts[0])) {
+					$opts['kernel'] = $this;
+				}
 				//create service
-				$this->services[$name] = $this->services[$name]($opts, $class);
+				$this->services[$name] = $this->services[$name]($class, $opts);
 			}
 			//get service
 			return $this->services[$name];
+		}
+
+		public function facade($name, $obj) {
+			//create facade class
+			eval("class $name { use " . __NAMESPACE__ . "\FacadeTrait; }");
+			//set instance
+			$name::setInstance($obj);
+			//is kernel?
+			if($obj === $this) {
+				$this->config('namespace', $name);
+			}
+			//return
+			return $name;
 		}
 
 		public function event($name, $params='%%null%%', $remove=false) {
@@ -1028,7 +1061,7 @@ namespace Prototypr {
 			//select method
 			$method = ($find && $data) ? 'load' : 'create';
 			//return model
-			return $this->orm->$method($name, $data);
+			return $this->orm->$method($name, $data ?: []);
 		}
 
 		public function schedule($name, $fn='%%null%%', $interval=3600, $reset=false) {
@@ -1370,6 +1403,128 @@ namespace Prototypr {
 					}
 				}
 			}
+		}
+
+	}
+
+	trait ConstructTrait {
+
+		protected $kernel;
+
+		public function __construct(array $opts=[], $merge=true) {
+			//set opts
+			foreach($opts as $k => $v) {
+				//property exists?
+				if(property_exists($this, $k)) {
+					//is array?
+					if($merge && $this->$k === (array) $this->$k) {
+						$this->$k = array_merge($this->$k, $v);
+					} else {
+						$this->$k = $v;
+					}
+				}
+			}
+			//set kernel?
+			if(!$this->kernel) {
+				$this->kernel = prototypr();
+			}
+			//hook
+			$this->onConstruct($opts);
+		}
+
+		protected function onConstruct(array $opts) {
+			return;
+		}
+
+	}
+
+	trait ExtendTrait {
+
+		private $__calls = [];
+
+		public function __call($method, array $args) {
+			//target method exists?
+			if(method_exists($this, '__target') && method_exists($this->__target(), $method)) {
+				return $this->__target()->$method(...$args);
+			}
+			//extension found?
+			if(isset($this->__calls[$method])) {
+				return $this->__calls[$method](...$args);
+			}
+			//not found
+			throw new \Exception("Method $method not found");
+		}
+
+		public final function extend($method, $callable = null) {
+			//set vars
+			$ext = [];
+			$target = method_exists($this, '__target') ? $this->__target() : $this;
+			//sync class?
+			if(strpos($method, '\\') > 0) {
+				//class data
+				$class = $method;
+				$opts = is_array($callable) ? $callable : [];
+				//default opts
+				$opts = array_merge([
+					'magic' => false,
+					'private' => false,
+					'inherited' => false,
+					'existing' => false,
+					'whitelist' => [],
+				], $opts);
+				//reflection class
+				$ref = new \ReflectionClass($class);
+				//loop through methods
+				foreach($ref->getMethods() as $rm) {
+					//get name
+					$method = $rm->getName();
+					//skip non-whitelist method?
+					if($opts['whitelist'] && !in_array($method, $opts['whitelist'])) {
+						continue;
+					}
+					//skip magic method?
+					if(!$opts['magic'] && strpos($method, '__') === 0) {
+						continue;
+					}
+					//skip private method?
+					if(!$opts['private'] && !$rm->isPublic()) {
+						continue;
+					}
+					//skip inherited method?
+					if(!$opts['inherited'] && $class !== $rm->getDeclaringClass()->name) {
+						continue;
+					}
+					//skip existing method?
+					if(!$opts['existing'] && method_exists($target, $method)) {
+						continue;
+					}
+					//add to array
+					$ext[$method] = [ $class, $method ];
+				}
+			} else {
+				$ext[$method] = $callable;
+			}
+			//loop through extensions
+			foreach($ext as $method => $callable) {
+				//can add callable?
+				if($callable = Meta::closure($callable, $target)) {
+					$this->__calls[$method] = $callable;
+				}
+			}
+		}
+
+	}
+
+	trait FacadeTrait {
+
+		private static $instance;
+
+		public final static function setInstance($instance) {
+			self::$instance = $instance;
+		}
+
+		public final static function __callStatic($method, $args) {
+			return self::$instance->$method(...$args);
 		}
 
 	}

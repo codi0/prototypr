@@ -4,6 +4,8 @@ namespace Prototypr;
 
 class Crypt {
 
+	use ConstructTrait;
+
 	protected $pepperKey = '';
 
 	protected $defaults = array(
@@ -15,19 +17,7 @@ class Crypt {
 		'token' => '::',
 	);
 
-	public function __construct(array $opts=[], $merge=true) {
-		//set opts
-		foreach($opts as $k => $v) {
-			//property exists?
-			if(property_exists($this, $k)) {
-				//is array?
-				if($merge && $this->$k === (array) $this->$k) {
-					$this->$k = array_merge($this->$k, $v);
-				} else {
-					$this->$k = $v;
-				}
-			}
-		}
+	protected function onConstruct(array $opts) {
 		//openssl enabled?
 		if(!extension_loaded('openssl')) {
 			throw new \Exception("OpenSSL not enabled");

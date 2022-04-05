@@ -4,6 +4,8 @@ namespace Prototypr;
 
 class Form {
 
+	use ConstructTrait;
+
 	protected $name = '';
 	protected $attr = [];
 	protected $fields = [];
@@ -19,8 +21,6 @@ class Form {
 	protected $onSave;
 	protected $onSuccess;
 	protected $onError;
-
-	protected $kernel;
 
 	private static $instances = [];
 
@@ -43,10 +43,6 @@ class Form {
 				'action' => $action,
 				'method' => strtolower($method),
 			], isset($opts['attr']) ? $opts['attr'] : []);
-			//set kernel?
-			if(!isset($opts['kernel'])) {
-				$opts['kernel'] = prototypr();
-			}
 			//create instance
 			self::$instances[$name] = new static($opts);
 		}
@@ -54,19 +50,7 @@ class Form {
 		return self::$instances[$name];
 	}
 
-	public function __construct(array $opts=[], $merge=true) {
-		//set opts
-		foreach($opts as $k => $v) {
-			//property exists?
-			if(property_exists($this, $k)) {
-				//is array?
-				if($merge && $this->$k === (array) $this->$k) {
-					$this->$k = array_merge($this->$k, $v);
-				} else {
-					$this->$k = $v;
-				}
-			}
-		}
+	protected function onConstruct(array $opts) {
 		//set default message?
 		if(!$this->message && $this->attr['method'] === 'post') {
 			$this->message = 'Form successfully saved';

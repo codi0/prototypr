@@ -4,7 +4,8 @@ namespace Prototypr;
 
 class Orm {
 
-	protected $kernel;
+	use ConstructTrait;
+
 	protected $modelCache = [];
 	protected $changeCache = [];
 
@@ -13,18 +14,10 @@ class Orm {
 
 	protected $namespace = 'App';
 
-	public function __construct(array $opts=[], $merge=true) {
-		//set opts
-		foreach($opts as $k => $v) {
-			//property exists?
-			if(property_exists($this, $k)) {
-				//is array?
-				if($merge && $this->$k === (array) $this->$k) {
-					$this->$k = array_merge($this->$k, $v);
-				} else {
-					$this->$k = $v;
-				}
-			}
+	protected function onConstruct(array $opts) {
+		//use custom namesapce?
+		if($ns = $this->kernel->config('namespace')) {
+			$this->namespace = $ns;
 		}
 	}
 
