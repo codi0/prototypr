@@ -221,6 +221,7 @@ namespace Prototypr {
 					//file exists?
 					if(is_file($path)) {
 						require_once($path);
+						break;
 					}
 				}
 			}));
@@ -635,8 +636,12 @@ namespace Prototypr {
 		}
 
 		public function facade($name, $obj) {
-			//create facade class
-			eval("class $name { use " . __NAMESPACE__ . "\FacadeTrait; }");
+			//format name
+			$name = ucfirst($name);
+			//create facade class?
+			if(!class_exists($name, false)) {
+				eval("class $name { use " . __NAMESPACE__ . "\FacadeTrait; }");
+			}
 			//set instance
 			$name::setInstance($obj);
 			//is kernel?

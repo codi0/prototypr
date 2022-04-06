@@ -175,9 +175,9 @@ class Meta {
 			$res['static'] = $ref->isStatic();
 		}
 		//set default value
-		if(method_exists($ref, 'getDefaultValue')) {
-			$res['value'] = $ref->getDefaultValue();
-			$res['type'] = $ref->hasType() ? $ref->getType()->getName() : getType($ref->getDefaultValue());
+		if($ref instanceof \ReflectionProperty) {
+			$res['value'] = $ref->getDeclaringClass()->getDefaultProperties()[$ref->getName()];
+			$res['type'] = $ref->hasType() ? $ref->getType()->getName() : getType($res['value']);
 		}
 		//set params?
 		if(method_exists($ref, 'getParameters')) {
