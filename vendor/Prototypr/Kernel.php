@@ -18,9 +18,10 @@ namespace Prototypr {
 
 		private static $_instances = [];
 
-		private $_hasRun = false;
 		private $_startMem = 0;
 		private $_startTime = 0;
+		private $_hasRun = false;
+		private $_classCache = [];
 
 		private $config = [];
 		private $cron = [];
@@ -212,14 +213,14 @@ namespace Prototypr {
 				}));
 			}
 			//default file loader
-			spl_autoload_register($this->bind(function($__class) {
+			spl_autoload_register($this->bind(function($class) {
 				//loop through paths
-				foreach($this->config('vendor_dirs') as $__path) {
+				foreach($this->config('vendor_dirs') as $path) {
 					//get file path
-					$__path .= '/' . str_replace('\\', '/', $__class) . '.php';
+					$path .= '/' . str_replace('\\', '/', $class) . '.php';
 					//file exists?
-					if(is_file($__path)) {
-						require_once($__path);
+					if(is_file($path)) {
+						require_once($path);
 					}
 				}
 			}));
@@ -307,10 +308,9 @@ namespace Prototypr {
 		}
 
 		public function bind($callable, $thisArg = null) {
-			//set vars
-			$thisArg = $thisArg ?: $this;
 			//bind closure?
 			if($callable instanceof \Closure) {
+				$thisArg = $thisArg ?: $this;
 				$callable = \Closure::bind($callable, $thisArg, $thisArg);
 			}
 			//return
@@ -318,25 +318,37 @@ namespace Prototypr {
 		}
 
 		public function class($name) {
-			//config class?
-			if($class = $this->config($name . '_class')) {
+			//format name
+			$name = ucfirst($name);
+			//is cached?
+			if(array_key_exists($name, $this->_classCache)) {
+				return $this->_classCache[$name];
+			}
+			//is configured?
+			if($class = $this->config(strtolower($name) . '_class')) {
+				$this->_classCache[$name] = $class;
 				return $class;
 			}
-			//try global namespace?
-			if($ns = $this->config('namespace')) {
-				//add namespace?
-				if($ns && strpos($name, $ns) === 0) {
-					$class = ucfirst($name);
-				} else {
-					$class = $ns . '\\' . ucfirst($name);
-				}
+			//is already a class?
+			if(strpos($name, '\\') !== false && class_exists($name)) {
+				$this->_classCache[$name] = $name;
+				return $name;
+			}
+			//check namespaces
+			foreach([ $this->config('namespace'), __NAMESPACE__ ] as $ns) {
+				//skip namespace?
+				if(!$ns) continue;
+				//add namespace
+				$class = $ns . '\\' . $name;
 				//class exists?
 				if(class_exists($class)) {
+					$this->_classCache[$name] = $class;
 					return $class;
 				}
 			}
-			//default
-			return __NAMESPACE__ . '\\' . ucfirst($name);
+			//not found
+			$this->_classCache[$name] = null;
+			return null;
 		}
 
 		public function path($path='', array $opts=[]) {
@@ -523,22 +535,86 @@ namespace Prototypr {
 
 		public function service($name, $obj='%%null%%') {
 			//set service?
-			if($obj !== '%%null%%') {
-				//update service
-				$this->services[$name] = $obj ? $this->bind($obj) : null;
-				//return
-				return $obj;
+			if($obj !== '%%null%%' && !is_bool($obj)) {
+				//handle service
+				if($obj instanceof \Closure) {
+					$this->config("{$name}_closure", $this->bind($obj));
+				} else if(is_string($obj)) {
+					$this->config("{$name}_class", $obj);
+				} else {
+					$this->services[$name] = $obj;
+					$this->config("{$name}_class", get_class($obj));
+				}
+				//stop here
+				return true;
 			}
-			//has service?
-			if(!isset($this->services[$name])) {
-				//get class
-				$class = $this->class($name);
-				//class exists?
-				if(!class_exists($class)) {
+			//set vars
+			$closure = $this->config("{$name}_closure");
+			$opts = $this->config("{$name}_opts") ?: [];
+			$shared = is_bool($obj) ? $obj : ($this->config("{$name}_shared") !== false);
+			//return shared service?
+			if($shared && isset($this->services[$name])) {
+				return $this->services[$name];
+			}
+			//class exists?
+			if(!$class = $this->class($name)) {
+				//stop here?
+				if(!$closure) {
 					return null;
 				}
-				//create service closure
-				$this->services[$name] = function($class, $opts) {
+			}
+			//use annotations?
+			if($class && $this->config('annotations')) {
+				//reflect class
+				$ref = new \ReflectionClass($class);
+				//loop through props
+				foreach($ref->getProperties() as $prop) {
+					//set vars
+					$propName = $prop->getName();
+					$annotations = Meta::annotations($prop);
+					//loop through annotations
+					foreach($annotations as $param => $args) {
+						//inject service?
+						if($param === 'inject') {
+							$opts[$propName] = '[' . ($args ? $args[0] : $propName) . ']';
+						}
+					}
+				}
+			}
+			//resolve opts
+			foreach($opts as $k => $v) {
+				//is string?
+				if($v && is_string($v)) {
+					//replace with service?
+					if($v[0] === '[' && $v[strlen($v)-1] === ']') {
+						//get param
+						$param = trim($v, '[]');
+						//has service?
+						if(!$opts[$k] = $this->service($param)) {
+							//wrap helper in closure
+							$opts[$k] = function() use($param) {
+								$args = func_get_args();
+								return $this->$param(...$args);
+							};
+						}
+					}
+					//replace with config?
+					if($v[0] === '%' && $v[strlen($v)-1] === '%') {
+						//get param
+						$param = trim($v, '%');
+						//find config
+						$opts[$k] = $this->config($param);
+					}
+				}
+			}
+			//inject kernel?
+			if(!$opts || !isset($opts[0])) {
+				$opts['kernel'] = $this;
+			}
+			//create closure?
+			if($closure === null) {
+				//default closure
+				$closure = function($opts, $class) {
 					if($opts && isset($opts[0])) {
 						return new $class(...$opts);
 					} else if($opts) {
@@ -548,72 +624,11 @@ namespace Prototypr {
 					}
 				};
 			}
-			//execute closure?
-			if($this->services[$name] instanceof \Closure) {
-				//get class
-				$class = $this->class($name);
-				$opts = $this->config("{$name}_opts") ?: [];
-				$shared = $this->config("{$name}_shared") !== false;
-				//inject kernel?
-				if(!$opts || !isset($opts[0])) {
-					$opts['kernel'] = $this;
-				}
-				//use annotations?
-				if($this->config('annotations')) {
-					//reflect class
-					$ref = new \ReflectionClass($class);
-					//loop through props
-					foreach($ref->getProperties() as $prop) {
-						//set vars
-						$propName = $prop->getName();
-						$annotations = Meta::annotations($prop);
-						//loop through annotations
-						foreach($annotations as $param => $args) {
-							//inject service?
-							if($param === 'inject') {
-								$opts[$propName] = '[' . ($args ? $args[0] : $propName) . ']';
-							}
-						}
-					}
-				}
-				//resolve opts
-				foreach($opts as $k => $v) {
-					//is string?
-					if($v && is_string($v)) {
-						//replace with service?
-						if($v[0] === '[' && $v[strlen($v)-1] === ']') {
-							//get param
-							$param = trim($v, '[]');
-							//helper or service?
-							if(method_exists($this, $param) || isset($this->__calls[$param])) {
-								//wrap in closure
-								$opts[$k] = function() use($param) {
-									$args = func_get_args();
-									return $this->$param(...$args);
-								};
-							} else {
-								//get service
-								$opts[$k] = $this->service($param);
-							}
-						}
-						//replace with config?
-						if($v[0] === '%' && $v[strlen($v)-1] === '%') {
-							//get param
-							$param = trim($v, '%');
-							//find config
-							$opts[$k] = $this->config($param);
-						}
-					}
-				}
-				//init service
-				$service = $this->services[$name]($class, $opts);
-				//cache service?
-				if($shared) {
-					$this->services[$name] = $service;
-				}
-			} else {
-				//already initiated
-				$service = $this->services[$name];
+			//init service
+			$service = $closure($opts, $class);
+			//cache service?
+			if($shared) {
+				$this->services[$name] = $service;
 			}
 			//return
 			return $service;
@@ -1095,8 +1110,10 @@ namespace Prototypr {
 		}
 
 		public function form($name, $method='post', $action='') {
-			//get library class
-			$class = $this->class('form');
+			//class found?
+			if(!$class = $this->class('form')) {
+				return null;
+			}
 			//format opts
 			if(is_array($method)) {
 				$opts = $method;

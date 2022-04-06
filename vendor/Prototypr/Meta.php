@@ -77,7 +77,7 @@ class Meta {
 		return $res;
 	}
 
-	public static function closure(callable $callable, $thisArg=null) {
+	public static function closure($callable, $thisArg=null) {
 		//is closure?
 		if(!($callable instanceof \Closure)) {
 			//get reflection object
