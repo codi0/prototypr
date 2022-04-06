@@ -130,6 +130,7 @@ namespace Prototypr {
 				'namespace' => null,
 				'version' => null,
 				'theme' => null,
+				'annotations' => false,
 				'custom_error_log' => true,
 			], $this->config);
 			//cache instance
@@ -523,7 +524,9 @@ namespace Prototypr {
 		public function service($name, $obj='%%null%%') {
 			//set service?
 			if($obj !== '%%null%%') {
-				$this->services[$name] = $this->bind($obj);
+				//update service
+				$this->services[$name] = $obj ? $this->bind($obj) : null;
+				//return
 				return $obj;
 			}
 			//has service?
@@ -549,17 +552,71 @@ namespace Prototypr {
 			if($this->services[$name] instanceof \Closure) {
 				//get class
 				$class = $this->class($name);
-				//get opts
-				$opts = $this->config($name . '_opts') ?: [];
+				$opts = $this->config("{$name}_opts") ?: [];
+				$shared = $this->config("{$name}_shared") !== false;
 				//inject kernel?
 				if(!$opts || !isset($opts[0])) {
 					$opts['kernel'] = $this;
 				}
-				//create service
-				$this->services[$name] = $this->services[$name]($class, $opts);
+				//use annotations?
+				if($this->config('annotations')) {
+					//reflect class
+					$ref = new \ReflectionClass($class);
+					//loop through props
+					foreach($ref->getProperties() as $prop) {
+						//set vars
+						$propName = $prop->getName();
+						$annotations = Meta::annotations($prop);
+						//loop through annotations
+						foreach($annotations as $param => $args) {
+							//inject service?
+							if($param === 'inject') {
+								$opts[$propName] = '[' . ($args ? $args[0] : $propName) . ']';
+							}
+						}
+					}
+				}
+				//resolve opts
+				foreach($opts as $k => $v) {
+					//is string?
+					if($v && is_string($v)) {
+						//replace with service?
+						if($v[0] === '[' && $v[strlen($v)-1] === ']') {
+							//get param
+							$param = trim($v, '[]');
+							//helper or service?
+							if(method_exists($this, $param) || isset($this->__calls[$param])) {
+								//wrap in closure
+								$opts[$k] = function() use($param) {
+									$args = func_get_args();
+									return $this->$param(...$args);
+								};
+							} else {
+								//get service
+								$opts[$k] = $this->service($param);
+							}
+						}
+						//replace with config?
+						if($v[0] === '%' && $v[strlen($v)-1] === '%') {
+							//get param
+							$param = trim($v, '%');
+							//find config
+							$opts[$k] = $this->config($param);
+						}
+					}
+				}
+				//init service
+				$service = $this->services[$name]($class, $opts);
+				//cache service?
+				if($shared) {
+					$this->services[$name] = $service;
+				}
+			} else {
+				//already initiated
+				$service = $this->services[$name];
 			}
-			//get service
-			return $this->services[$name];
+			//return
+			return $service;
 		}
 
 		public function facade($name, $obj) {
@@ -1440,7 +1497,7 @@ namespace Prototypr {
 
 	trait ExtendTrait {
 
-		private $__calls = [];
+		protected $__calls = [];
 
 		public function __call($method, array $args) {
 			//target method exists?
