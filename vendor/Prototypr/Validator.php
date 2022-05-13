@@ -55,7 +55,7 @@ class Validator {
 		//has args?
 		if(strpos($rule, '(') !== false) {
 			list($rule, $args) = explode('(', $rule);
-			$args = array_map('trim', explode(',', trim(')', $args)));
+			$args = array_map('trim', explode(',', trim($args, ')')));
 		}
 		//rule exists?
 		if(!isset($this->rules[$rule])) {

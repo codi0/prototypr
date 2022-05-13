@@ -154,9 +154,15 @@ class Model {
 		return $this->id();
 	}
 
-	public final function set(array $data) {
+	public final function set(array $data, array $opts=[]) {
+		//set opts
+		$opts = array_merge([
+			'relFields' => [],
+		], $opts);
 		//setter hook
-		$data = $this->onSet($data);
+		if(!$data = $this->onSet($data)) {
+			return $this;
+		}
 		//loop through data
 		foreach($data as $k => $v) {
 			//set property?
@@ -166,37 +172,68 @@ class Model {
 		}
 		//check relations
 		foreach($this->__meta['relations'] as $prop => $meta) {
-			//set data?
+			//can set?
 			if($meta['onSet']) {
-				$this->$prop->set($data);
+				//set vars
+				$tmp = $data;
+				$rel = $this->$prop;
+				$field = isset($opts['relFields'][$prop]) ? $opts['relFields'][$prop] : $prop;
+				//is proxy?
+				if($rel instanceof Proxy) {
+					$rel = $rel->__target();
+				}
+				//loop through data
+				foreach($tmp as $k => $v) {
+					//update data?
+					if(is_array($v) && preg_match("/(^" . $field . "$)|(\_" . $field . "$)/i", $k)) {
+						$tmp = $v;
+						break;
+					}
+				}
+				//is collection?
+				if($rel instanceOf ModelCollection) {
+					//first key
+					$fk = array_key_first($tmp);
+					//reset data?
+					if(is_null($fk) || !is_array($tmp[$fk])) {
+						$tmp = [];
+					}
+				}
+				//set data?
+				if(!empty($tmp)) {
+					$rel->set($tmp, $opts);
+				}
 			}
 		}
 		//chain it
 		return $this;
 	}
 
-	public final function save() {
+	public final function save($delete = false) {
 		//is valid?
 		if(!$this->isValid()) {
 			return false;
 		}
 		//read only?
 		if($this->__meta['readonly']) {
-			return $this->id ?: false;
+			return ($this->id && !$delete) ? $this->id : false;
 		}
+		//set vars
+		$method = $delete ? 'delete' : 'save';
+		$hook = 'on' . ($delete ? 'Delete' : 'Save');
 		//data saved?
-		if(!$id = $this->kernel->orm->save($this)) {
-			$this->addError('unknown', 'Unable to save record. Please try again.');
+		if(!$id = $this->kernel->orm->$method($this)) {
+			$this->addError('unknown', 'Unable to ' . $method . ' record. Please try again.');
 			return false;
 		}
-		//currently saving?
-		if(!$this->__meta['saving']) {
+		//currently processing?
+		if(!$this->__meta['processing']) {
 			//start saving
-			$this->__meta['saving'] = true;
+			$this->__meta['processing'] = true;
 			//check relations
 			foreach($this->__meta['relations'] as $prop => $meta) {
 				//save relation now?
-				if($meta['onSave'] && !$this->$prop->save()) {
+				if($meta[$hook] && !$this->$prop->$method()) {
 					//set errors
 					foreach($this->$prop->errors() as $k => $v) {
 						$this->addError($k, $v);
@@ -204,12 +241,16 @@ class Model {
 				}
 			}
 			//save hook
-			$this->onSave();
+			$this->$hook();
 			//finish saving
-			$this->__meta['saving'] = false;
+			$this->__meta['processing'] = false;
 		}
 		//return
-		return empty($this->__meta['errors']) ? $id : false;
+		return empty($this->__meta['errors']) ? ($delete ? true : $id) : false;
+	}
+
+	public function delete() {
+		return $this->save(true);
 	}
 
 	protected final function addError($key, $val) {
@@ -265,7 +306,7 @@ class Model {
 			$val = $val ?: NULL;
 		}
 		//return
-		return $val;	
+		return $val;
 	}
 
 	protected function onChange($key, $val, $isHydrating) {
@@ -277,6 +318,10 @@ class Model {
 	}
 
 	protected function onSave() {
+		return;
+	}
+
+	protected function onDelete() {
 		return;
 	}
 
@@ -298,7 +343,7 @@ class Model {
 				'errorsArray' => false,
 				'readonly' => false,
 				'hydrating' => false,
-				'saving' => false,
+				'processing' => false,
 			];
 			//default rel
 			$defRel = [
@@ -309,6 +354,7 @@ class Model {
 				'onSet' => true,
 				'onValidate' => true,
 				'onSave' => true,
+				'onDelete' => true,
 			];
 			//parse meta
 			$parse = Meta::parse($class, [

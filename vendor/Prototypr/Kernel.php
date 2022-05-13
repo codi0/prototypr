@@ -111,7 +111,7 @@ namespace Prototypr {
 				'webcron' => true,
 				//dirs
 				'base_dir' => $baseDir,
-				'vendor_dirs' => [ $baseDir . '/vendor' ],
+				'vendor_dirs' => array_unique([ $baseDir . '/vendor', dirname(__DIR__) ]),
 				'cache_dir' => $baseDir . '/cache',
 				'config_dir' => $baseDir . '/config',
 				'logs_dir' => $baseDir . '/logs',
@@ -211,6 +211,16 @@ namespace Prototypr {
 						$this->logException(new \ErrorException($error['message'], 0, $error['type'], $error['file'], $error['line']));
 					}
 				}));
+			}
+			//create default dirs
+			foreach([ 'cache_dir', 'config_dir', 'logs_dir', 'modules_dir', 'vendor_dirs' ] as $k) {
+				//get dir
+				$dir = $this->config[$k];
+				$dir = ($dir && is_array($dir)) ? $dir[0] : $dir;
+				//create dir?
+				if($dir && !is_dir($dir)) {
+					mkdir($dir);
+				}
 			}
 			//default file loader
 			spl_autoload_register($this->bind(function($class) {
@@ -1523,8 +1533,13 @@ namespace Prototypr {
 
 		public function __call($method, array $args) {
 			//target method exists?
-			if(method_exists($this, '__target') && method_exists($this->__target(), $method)) {
-				return $this->__target()->$method(...$args);
+			if(method_exists($this, '__target')) {
+				//get target
+				$target = $this->__target();
+				//can call method?
+				if(method_exists($target, $method)) {
+					return $target->$method(...$args);
+				}
 			}
 			//extension found?
 			if(isset($this->__calls[$method])) {

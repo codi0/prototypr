@@ -111,7 +111,15 @@ class Orm {
 		return $model;
 	}
 
-	public function loadCollection($name, array $conditions=[]) {
+	public function loadCollection($name, array $conditions=[], $wrap=true) {
+		//wrap?
+		if($wrap) {
+			return new ModelCollection([
+				'name' => $name,
+				'conditions' => $conditions,
+				'orm' => $this,
+			]);
+		}
 		//set vars
 		$collection = [];
 		//query data
@@ -222,6 +230,10 @@ class Orm {
 		if(!empty($data)) {
 			//save event
 			$data = $this->kernel->event('orm.save', $data, $model);
+			//stop here?
+			if($data === false) {
+				return false;
+			}
 			//save data
 			if($model->{$meta['id']}) {
 				//update query
@@ -248,6 +260,40 @@ class Orm {
 		}
 		//return
 		return ($result !== false && $model->{$meta['id']}) ? $model->{$meta['id']} : false;
+	}
+
+	public function delete($model) {
+		//set vars
+		$result = true;
+		$class = get_class($model);
+		$table = $this->dbTable($class);
+		$meta = $this->classMeta($class);
+		//valid model?
+		if(!property_exists($model, $meta['id'])) {
+			throw new \Exception("Model cannot be deleted without an ID field: " . $meta['id']);
+		}
+		//anything to delete?
+		if($id = $model->{$meta['id']}) {
+			//delete event
+			if($this->kernel->event('orm.delete', $model) === false) {
+				return false;
+			}
+			//delete query
+			$result = $this->kernel->db->delete($table, [ $meta['id'] => $id ]);
+			//cache keys
+			$changeCacheKey = spl_object_hash($model);
+			$modelCacheKey = $this->formatKey($class, [ $meta['id'] => $id ]);
+			//delete change cache?
+			if(isset($this->changeCache[$changeCacheKey])) {
+				unset($this->changeCache[$changeCacheKey]);
+			}
+			//delete model cache?
+			if(isset($this->modelCache[$modelCacheKey])) {
+				unset($this->modelCache[$modelCacheKey]);
+			}
+		}
+		//return
+		return $result;
 	}
 
 	public function onChange($model, $key, $val) {
@@ -289,7 +335,7 @@ class Orm {
 			$conditions = [];
 		}
 		//run query?
-		if($collection || $conditions) {
+		if($conditions) {
 			//create where sql
 			foreach($conditions as $k => $v) {
 				$conditions[$k] = (string) $v;
@@ -336,7 +382,7 @@ class Orm {
 			//create proxy relation
 			$relation = new Proxy(function() use($orm, $model, $prop, $meta) {
 				//set vars
-				$isCollection = stripos($meta['type'], 'many') !== false;
+				$isCollection = stripos($meta['type'], 'many') > 0;
 				$method = $isCollection ? 'loadCollection' : 'load';
 				//loop through conditions
 				foreach($meta['where'] as $k => $v) {

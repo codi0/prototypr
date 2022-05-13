@@ -13,7 +13,10 @@ class Proxy {
 	}
 
 	public function __isset($key) {
-		return isset($this->__target()->$key);
+		//get target
+		$target = $this->__target();
+		//return
+		return isset($target->$key);
 	}
 
 	public function __unset($key) {
@@ -37,7 +40,10 @@ class Proxy {
 	}
 
 	public function __set($key, $val) {
-		$this->__target()->$key = $val;
+		//get target
+		$target = $this->__target();
+		//set property
+		$target->$key = $val;
 	}
 
 	public function __target() {
@@ -45,6 +51,10 @@ class Proxy {
 		if($this->__target instanceof \Closure) {
 			$closure = $this->__target;
 			$this->__target = $closure();
+		}
+		//is object?
+		if(!is_object($this->__target)) {
+			throw new \Exception("Proxy target must be an object");
 		}
 		//return
 		return $this->__target;
