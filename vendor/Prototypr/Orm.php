@@ -280,6 +280,8 @@ class Orm {
 			}
 			//delete query
 			$result = $this->kernel->db->delete($table, [ $meta['id'] => $id ]);
+			//unset value
+			$model->{$meta['id']} = null;
 			//cache keys
 			$changeCacheKey = spl_object_hash($model);
 			$modelCacheKey = $this->formatKey($class, [ $meta['id'] => $id ]);
@@ -293,7 +295,7 @@ class Orm {
 			}
 		}
 		//return
-		return $result;
+		return ($result !== false);
 	}
 
 	public function onChange($model, $key, $val) {
@@ -305,6 +307,14 @@ class Orm {
 		}
 		//log change
 		$this->changeCache[$hash][$key] = $val;
+	}
+
+	public function clearCache() {
+		//clear vars
+		$this->modelCache = [];
+		$this->changeCache = [];
+		//return
+		return true;
 	}
 
 	public function dbTable($name) {

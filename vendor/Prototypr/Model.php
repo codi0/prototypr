@@ -75,10 +75,7 @@ class Model {
 	}
 
 	public final function id() {
-		//get id field
-		$idField = $this->__meta['id'];
-		//return
-		return $this->$idField;
+		return $this->{$this->__meta['id']};
 	}
 
 	public final function toArray() {
@@ -216,7 +213,7 @@ class Model {
 		}
 		//read only?
 		if($this->__meta['readonly']) {
-			return ($this->id && !$delete) ? $this->id : false;
+			return ($this->id() && !$delete) ? $this->id() : false;
 		}
 		//set vars
 		$method = $delete ? 'delete' : 'save';
@@ -246,10 +243,10 @@ class Model {
 			$this->__meta['processing'] = false;
 		}
 		//return
-		return empty($this->__meta['errors']) ? ($delete ? true : $id) : false;
+		return $this->__meta['errors'] ? false : ($delete ? true : $id);
 	}
 
-	public function delete() {
+	public final function delete() {
 		return $this->save(true);
 	}
 
