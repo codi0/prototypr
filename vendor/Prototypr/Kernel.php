@@ -990,7 +990,11 @@ namespace Prototypr {
 			}
 			//format headers?
 			if(is_array($opts['headers'])) {
-				$opts['headers'] = trim(implode("\r\n", $opts['headers']));
+				$headers = [];
+				foreach($opts['headers'] as $k => $v) {
+					$headers[] = ucfirst(is_numeric($k) ? $v : ($k . ': ' . $v));
+				}
+				$opts['headers'] = trim(implode("\r\n", $headers));
 			}
 			//format body?
 			if(is_array($opts['body'])) {
@@ -999,6 +1003,10 @@ namespace Prototypr {
 			//set content type?
 			if($opts['body'] && stripos($opts['headers'], 'Content-Type:') === false) {
 				$opts['headers'] .= "\r\nContent-Type: application/x-www-form-urlencoded";
+			}
+			//set content length?
+			if($opts['body'] && stripos($opts['headers'], 'Content-Length:') === false) {
+				$opts['headers'] .= "\r\nContent-Length: " . strlen($opts['body']);
 			}
 			//set user agent?
 			if($opts['user_agent'] && stripos($opts['headers'], 'User-Agent:') === false) {
@@ -1020,7 +1028,7 @@ namespace Prototypr {
 				$request .= "Host: " . $parse['host'] . "\r\n";
 				$request .= $opts['headers'] ? trim($opts['headers']) . "\r\n" : "";
 				$request .= "Connection: Close\r\n\r\n";
-				$request .= $opts['body'];		
+				$request .= $opts['body'];
 				//send request
 				fputs($fp, $request, strlen($request));
 				//read buffer

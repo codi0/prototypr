@@ -147,6 +147,14 @@ class Test {
 		return $this->assertTrue($arg1 !== $arg2, $message);
 	}
 
+	public function assertNotEmpty($arg, $message='') {
+		return $this->assertTrue(!empty($arg), $message);
+	}
+
+	public function assertEmpty($arg, $message='') {
+		return $this->assertTrue(empty($arg), $message);
+	}
+
 	public function assertInArray($arg, array $arr, $message='') {
 		return $this->assertTrue(in_array($arg, $arr), $message);
 	}

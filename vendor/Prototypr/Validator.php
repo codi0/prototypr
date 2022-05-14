@@ -91,6 +91,10 @@ class Validator {
 		if(!is_callable($filter)) {
 			throw new \Exception("Filter is not a valid callable");
 		}
+		//force to string?
+		if(function_exists($filter) && strpos($filter, 'str') === 0) {
+			$value = is_string($value) ? $value : '';
+		}
 		//execute callback
 		return call_user_func($filter, $value, ...$args);
 	}
@@ -407,6 +411,10 @@ class Validator {
 	protected function ruleDateFormat($value, $format='Y-m-d') {
 		//has value?
 		if($value) {
+			//check first part only?
+			if(strpos($format, ' ') === false) {
+				$value = explode(' ', $value)[0];
+			}
 			//convert to datetime
 			$d = \DateTime::createFromFormat($format, $value);
 			//format matches?
