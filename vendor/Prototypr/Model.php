@@ -181,6 +181,11 @@ class Model {
 				}
 				//loop through data
 				foreach($tmp as $k => $v) {
+					//skip field?
+					if(in_array($k, $meta['skipFields'])) {
+						unset($tmp[$k]);
+						continue;
+					}
 					//update data?
 					if(is_array($v) && preg_match("/(^" . $field . "$)|(\_" . $field . "$)/i", $k)) {
 						$tmp = $v;
@@ -294,11 +299,11 @@ class Model {
 		if($type === 'string') {
 			$val = trim($val);
 		} else if($type === 'integer') {
-			$val = intval($val);
+			$val = $val ?: 0;
 		} else if($type === 'double') {
-			$val = floatval($val);
+			$val = $val ?: 0;
 		} else if($type === 'array') {
-			$val = (array) ($val ?: []);
+			$val = $val ?: [];
 		} else {
 			$val = $val ?: NULL;
 		}
@@ -352,6 +357,7 @@ class Model {
 				'onValidate' => true,
 				'onSave' => true,
 				'onDelete' => true,
+				'skipFields' => [],
 			];
 			//parse meta
 			$parse = Meta::parse($class, [

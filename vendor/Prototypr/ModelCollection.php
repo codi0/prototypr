@@ -42,7 +42,7 @@ class ModelCollection extends \ArrayObject {
 		return (array) $this;
 	}
 
-	public function errors() {
+	public function errors($flatten=true) {
 		//set vars
 		$errors = [];
 		//check for errors?
@@ -51,12 +51,18 @@ class ModelCollection extends \ArrayObject {
 			foreach($this as $key => $model) {
 				//loop through errors
 				foreach($model->errors() as $k => $v) {
-					//create array?
-					if(!isset($errors[$key])) {
-						$errors[$key] = [];
+					//flatten errors?
+					if($flatten) {
+						//add error
+						$errors[$k] = $v;
+					} else {
+						//create array?
+						if(!isset($errors[$key])) {
+							$errors[$key] = [];
+						}
+						//add error
+						$errors[$key][$k] = $v;
 					}
-					//add error
-					$errors[$key][$k] = $v;
 				}
 			}
 		}
@@ -128,6 +134,26 @@ class ModelCollection extends \ArrayObject {
 
 	public function remove($model) {
 		return $this->delete($model);
+	}
+
+	public function inject($prop, $val=null) {
+		//convert to array?
+		if(!is_array($prop)) {
+			$prop = [ $prop => $val ];
+		}
+		//lazy load?
+		if($this->conditions) {
+			$this->lazyLoad();
+		}
+		//loop through models
+		foreach($this as $model) {
+			//loop through props
+			foreach($prop as $k => $v) {
+				$model->$k = $v;
+			}
+		}
+		//return
+		return true;
 	}
 
 	public function save() {
@@ -225,10 +251,10 @@ class ModelCollection extends \ArrayObject {
 		if(!$this->conditions) {
 			return;
 		}
-		//clear opts
-		$this->conditions = [];
 		//get collection as array
 		$models = $this->orm->loadCollection($this->name, $this->conditions, false);
+		//clear opts
+		$this->conditions = [];
 		//loop through models
 		foreach($models as $m) {
 			$this[] = $this->createModel($m);

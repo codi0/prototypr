@@ -37,8 +37,8 @@ class Meta {
 	public static function annotations(\Reflector $ref, $open='[', $close=']') {
 		//set vars
 		$res = [];
-		$docblock = $ref->getDocComment();
-		$regex = str_replace([ ':open', ':close' ], [ $open, $close ], "/([a-z0-9]+)\:open([^\:close]+)\:close/i");
+		$docblock = str_replace("\r\n", "\n", $ref->getDocComment());
+		$regex = str_replace([ ':open', ':close' ], [ $open, $close ], '/([a-z0-9]+)\:open(.*)\:close\n/i');
 		//parse comment
 		if($docblock && preg_match_all($regex, $docblock, $matches)) {
 			//loop through matches

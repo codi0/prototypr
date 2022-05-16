@@ -36,21 +36,11 @@ class Orm {
 		}
 		//pass kernel
 		$opts['kernel'] = $this->kernel;
-		//has relations?
-		if($meta['relations']) {
-			//create model
-			$refClass  = new \ReflectionClass($class);
-			$model = $refClass->newInstanceWithoutConstructor();
-			//sync relations
-			foreach($meta['relations'] as $k => $v) {
-				$model->$k = $this->syncRelation($model, $k, $v);
-			}
-			//call constructor
-			$ctor = $refClass->getConstructor();
-			$ctor->invokeArgs($model, [ $opts ]);
-		} else {
-			//create model
-			$model = new $class($opts);
+		//create model
+		$model = new $class($opts);
+		//sync relations
+		foreach($meta['relations'] as $k => $v) {
+			$model->$k = $this->syncRelation($model, $k, $v);
 		}
 		//update ID cache?
 		if($model->{$meta['id']}) {
@@ -381,8 +371,12 @@ class Orm {
 		}
 		//does relation exist?
 		if($relation = $model->$prop) {
-			//is proxy?
-			if(!($relation instanceof Proxy)) {
+			//is collection?
+			if($relation instanceOf ModelCollection) {
+				$relation->inject($meta['where']);
+			}
+			//is model?
+			if($relation instanceOf Model) {
 				//loop through conditions
 				foreach($meta['where'] as $k => $v) {
 					$relation->$k = $v;
@@ -457,13 +451,11 @@ class Orm {
 	}
 
 	protected function decodeJson(array $arr) {
-		//set vars
-		$method = __METHOD__;
 		//loop through array
 		foreach($arr as $key => $val) {
 			//is array?
 			if(is_array($val) || is_object($val)) {
-				$arr[$key] = $this->$method((array) $val);
+				$arr[$key] = $this->decodeJson((array) $val);
 			} else if(!empty($val)) {
 				$arr[$key] = json_decode($val, true) ?: $val;
 			}
