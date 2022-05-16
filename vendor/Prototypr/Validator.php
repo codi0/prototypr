@@ -92,7 +92,7 @@ class Validator {
 			throw new \Exception("Filter is not a valid callable");
 		}
 		//force to string?
-		if(function_exists($filter) && strpos($filter, 'str') === 0) {
+		if(is_string($filter) && strpos($filter, 'str') === 0) {
 			$value = is_string($value) ? $value : '';
 		}
 		//execute callback

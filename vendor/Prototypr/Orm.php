@@ -369,48 +369,43 @@ class Orm {
 	}
 
 	protected function syncRelation($model, $prop, array $meta) {
+		//resolve where conditions
+		foreach($meta['where'] as $k => $v) {
+			//is placeholder?
+			if($v && $v[0] === ':') {
+				//get field
+				$field = substr($v, 1);
+				//update condition
+				$meta['where'][$k] = $model->$field;
+			}
+		}
 		//does relation exist?
 		if($relation = $model->$prop) {
 			//is proxy?
 			if(!($relation instanceof Proxy)) {
 				//loop through conditions
 				foreach($meta['where'] as $k => $v) {
-					//is placeholder?
-					if($v && $v[0] === ':') {
-						//get field
-						$field = substr($v, 1);
-						//update condition
-						$v = $model->$field;
-					}
-					//set relation prop
 					$relation->$k = $v;
 				}
 			}
 		} else {
-			//set vars
-			$orm = $this;
-			//create proxy relation
-			$relation = new Proxy(function() use($orm, $model, $prop, $meta) {
+			//model or collection?
+			if(stripos($meta['type'], 'many') > 0) {
+				//load collection
+				$relation = $this->loadCollection($meta['model'], $meta['where']);
+			} else {
 				//set vars
-				$isCollection = stripos($meta['type'], 'many') > 0;
-				$method = $isCollection ? 'loadCollection' : 'load';
-				//loop through conditions
-				foreach($meta['where'] as $k => $v) {
-					//is placeholder?
-					if($v && $v[0] === ':') {
-						//get field
-						$field = substr($v, 1);
-						//update condition
-						$meta['where'][$k] = $model->$field;
-					}
-				}
-				//load model
-				$rel = $orm->$method($meta['model'], $meta['where']);
-				//set prop
-				$model->$prop = $rel;
-				//return
-				return $rel;
-			});
+				$orm = $this;
+				//create proxy relation
+				$relation = new Proxy(function() use($orm, $model, $prop, $meta) {
+					//load model
+					$rel = $orm->load($meta['model'], $meta['where']);
+					//set prop
+					$model->$prop = $rel;
+					//return
+					return $rel;
+				});
+			}
 		}
 		//return
 		return $relation;

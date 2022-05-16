@@ -6,6 +6,8 @@ class Test {
 
 	protected $title = '';
 	protected $results = [];
+
+	protected $testCbs = [];
 	protected $currentTest = '';
 
 	use ConstructTrait;
@@ -26,12 +28,27 @@ class Test {
 		return $this->results;
 	}
 
+	public function addTest($name, $callback) {
+		//format name
+		$name = preg_replace_callback("/(?:^|_)([a-z])/", function($m) {
+			return strtoupper($m[1]);
+		}, $name);
+		//format test prefix
+		if(stripos($name, 'test') === 0) {
+			$name = lcfirst($name);
+		} else {
+			$name = 'test' . $name;
+		}
+		//cache callback
+		$this->testCbs[$name] = $callback;
+	}
+
 	public function run() {
 		//set vars
 		$this->currentTest = '';
 		//run setup
 		$this->setup();
-		//run tests
+		//run method tests
 		foreach(get_class_methods($this) as $method) {
 			//is test method?
 			if(stripos($method, 'test') === 0) {
@@ -40,6 +57,13 @@ class Test {
 				//run test
 				$this->$method();
 			}
+		}
+		//run callback tests
+		foreach($this->testCbs as $name => $callback) {
+			//cache test name
+			$this->currentTest = get_class($this) . '::' . $name;
+			//run test
+			$callback();
 		}
 		//reset vars
 		$this->currentTest = '';
