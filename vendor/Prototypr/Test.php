@@ -91,7 +91,7 @@ class Test {
 			foreach($meta['assertions'] as $a) {
 				if(!$a['pass']) {
 					$file = str_replace($this->kernel->config('base_dir'), '', $a['file']);
-					$text .= '* ' . $a['function'] . ' - ' . ($a['message'] ?: 'failed') . ' - ' . $file . ':' . $a['line'] . "\n";
+					$text .= '* ' . $a['function'] . ' - ' . ($a['message'] ?: 'failed') . ' - ' . basename($file) . ':' . $a['line'] . "\n";
 				}
 			}
 			//end
