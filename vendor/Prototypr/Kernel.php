@@ -773,15 +773,20 @@ namespace Prototypr {
 				}
 			}
 			//use custom log
-			return $this->cache($this->config('logs_dir') . "/{$name}.log", $data, true);	
+			return $this->cache($this->config('logs_dir') . "/{$name}.log", $data, [ 'append' => true ]);	
 		}
 
-		public function cache($path, $data='%%null%%', $append=false) {
+		public function cache($path, $data='%%null%%', array $opts=[]) {
 			//set vars
 			$output = false;
 			$closure = ($data instanceof \Closure);
-			//add path?
-			if(strpos($path, '/') === false) {
+			//default opts
+			$opts = array_merge([
+				'append' => false,
+				'expiry' => 0,
+			], $opts);
+			//add base path?
+			if(strpos($path, '/') !== 0) {
 				$path = $this->config('cache_dir') . '/' . $path;
 			}
 			//add ext?
@@ -794,16 +799,32 @@ namespace Prototypr {
 			}
 			//set data?
 			if($data !== '%%null%%' && !$closure) {
+				//set expiry?
+				if($opts['expiry']) {
+					//set data
+					$data = [
+						'expiry' => time() + $opts['expiry'],
+						'data' => $data,
+					];
+					//can append?
+					if($opts['append']) {
+						throw new \Exception("Cannot append to cache when expiry set");
+					}
+				}
 				//encode data?
 				if(!is_string($data) && !is_numeric($data)) {
 					$data = json_encode($data, JSON_PRETTY_PRINT);
 				}
 				//append data?
-				if($append) {
+				if($opts['append']) {
 					$data  = ltrim($data) . "\n";
 				}
+				//create dir?
+				if(!is_dir(dirname($path))) {
+					mkdir(dirname($path), 0755, true);
+				}
 				//save to file
-				return file_put_contents($path, $data, $append ? LOCK_EX|FILE_APPEND : LOCK_EX);
+				return file_put_contents($path, $data, $opts['append'] ? LOCK_EX|FILE_APPEND : LOCK_EX);
 			}
 			//get file output?
 			if(is_file($path)) {
@@ -813,6 +834,16 @@ namespace Prototypr {
 			if($output !== false) {
 				$decode = json_decode($output, true);
 				$output = is_null($decode) ? ($closure ? null : $output) : $decode;
+			}
+			//has expiry?
+			if(is_array($output) && isset($output['expiry'])) {
+				$expiry = $output['expiry'];
+				$output = $output['data'];
+				//has expired?
+				if(time() > $expiry) {
+					$output = null;
+					unlink($path);
+				}
 			}
 			//call closure?
 			if($closure) {
