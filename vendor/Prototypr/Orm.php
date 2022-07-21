@@ -42,7 +42,7 @@ class Orm {
 		foreach($meta['relations'] as $k => $v) {
 			$model->$k = $this->syncRelation($model, $k, $v);
 		}
-		//update ID cache?
+		//update model cache?
 		if($model->{$meta['id']}) {
 			$idCacheKey = $this->formatKey($class, [ $meta['id'] => $model->{$meta['id']} ]);
 			$this->modelCache[$idCacheKey] = $model;
@@ -93,6 +93,10 @@ class Orm {
 		}
 		//create model
 		$model = $this->create($name, $data);
+		//update isNew meta?
+		if($model->{$meta['id']}) {
+			$this->classMeta($class, [ 'object' => $model, 'key' => 'isNew', 'val' => false ]);
+		}
 		//update con cache?
 		if($conditions && $conCacheKey) {
 			$this->modelCache[$conCacheKey] = $model;
@@ -125,7 +129,7 @@ class Orm {
 	public function hydrate($model, array $conditions) {
 		//set vars
 		$class = get_class($model);
-		$meta = $this->classMeta($class);
+		$meta = $this->classMeta($class, [ 'object' => $model ]);
 		//query data?
 		if(!$data = $this->doQuery($class, $conditions)) {
 			//pass conditions
@@ -139,10 +143,13 @@ class Orm {
 		foreach($data as $key => $val) {
 			$model->$key = $val;
 		}
-		//update ID cache?
+		//has ID?
 		if($model->{$meta['id']}) {
+			//update model cache
 			$idCacheKey = $this->formatKey($class, [ $meta['id'] => $model->{$meta['id']} ]);
 			$this->modelCache[$idCacheKey] = $model;
+			//update isNew meta
+			$this->classMeta($class, [ 'object' => $model, 'key' => 'isNew', 'val' => false ]);
 		}
 		//update con cache?
 		if(!empty($conditions)) {
@@ -163,7 +170,7 @@ class Orm {
 		$result = null;
 		$class = get_class($model);
 		$table = $this->dbTable($class);
-		$meta = $this->classMeta($class);
+		$meta = $this->classMeta($class, [ 'object' => $model ]);
 		//valid model?
 		if(!property_exists($model, $meta['id'])) {
 			throw new \Exception("Model cannot be saved without an ID field: " . $meta['id']);
@@ -196,9 +203,14 @@ class Orm {
 		//filter data
 		foreach($data as $k => $v) {
 			//remove from array?
-			if($k === $meta['id'] || in_array($k, $meta['ignore']) || is_object($v)) {
+			if(in_array($k, $meta['ignore']) || is_object($v)) {
 				unset($data[$k]);
 				continue;
+			}
+			//remove ID?
+			if($k === $meta['id'] && $meta['isNew'] === false) {
+				unset($data[$k]);
+				continue;	
 			}
 			//null field?
 			if(empty($v) && isset($meta['props'][$k]) && $meta['props'][$k]['null']) {
@@ -224,17 +236,20 @@ class Orm {
 			if($data === false) {
 				return false;
 			}
-			//save data
-			if($model->{$meta['id']}) {
-				//update query
-				$result = $this->kernel->db->update($table, $data, [ $meta['id'] => $model->{$meta['id']} ]);
-			} else {
+			//insert or update?
+			if($meta['isNew'] === true || ($meta['isNew'] === null && !$model->{$meta['id']})) {
 				//insert query
 				$result = $this->kernel->db->insert($table, $data);
 				//cache insert ID?
 				if($result !== false) {
+					//update ID
 					$model->{$meta['id']} = $this->kernel->db->insert_id;
+					//update isNew meta
+					$this->classMeta($class, [ 'object' => $model, 'key' => 'isNew', 'val' => false ]);
 				}
+			} else {
+				//update query
+				$result = $this->kernel->db->update($table, $data, [ $meta['id'] => $model->{$meta['id']} ]);
 			}
 			//update caches?
 			if($result !== false) {
@@ -257,7 +272,7 @@ class Orm {
 		$result = true;
 		$class = get_class($model);
 		$table = $this->dbTable($class);
-		$meta = $this->classMeta($class);
+		$meta = $this->classMeta($class, [ 'object' => $model ]);
 		//valid model?
 		if(!property_exists($model, $meta['id'])) {
 			throw new \Exception("Model cannot be deleted without an ID field: " . $meta['id']);
@@ -272,6 +287,8 @@ class Orm {
 			$result = $this->kernel->db->delete($table, [ $meta['id'] => $id ]);
 			//unset value
 			$model->{$meta['id']} = null;
+			//reset isNew meta
+			$this->classMeta($class, [ 'object' => $model, 'key' => 'isNew', 'val' => true ]);
 			//cache keys
 			$changeCacheKey = spl_object_hash($model);
 			$modelCacheKey = $this->formatKey($class, [ $meta['id'] => $id ]);
@@ -405,10 +422,10 @@ class Orm {
 		return $relation;
 	}
 
-	protected function classMeta($class) {
+	protected function classMeta($class, array $opts=[]) {
 		//has class meta?
 		if(method_exists($class, '__meta')) {
-			return $class::__meta();
+			return $class::__meta($opts);
 		}
 		//default
 		return [
@@ -418,10 +435,11 @@ class Orm {
 			'props' => [],
 			'relations' => [],
 			'errors' => [],
-			'errorsArray' => false,
-			'readonly' => false,
-			'hydrating' => false,
-			'saving' => false,
+			'errorsArray' => null,
+			'readonly' => null,
+			'hydrating' => null,
+			'processing' => null,
+			'isNew' => null,
 		];
 	}
 

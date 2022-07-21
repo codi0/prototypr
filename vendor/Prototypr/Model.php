@@ -329,10 +329,20 @@ class Model {
 
 	/* Static helpers */
 
-	public final static function __meta($key=null) {
+	public final static function __meta($opts=[]) {
+		//opts to array?
+		if($opts && is_string($opts)) {
+			$opts = [ 'key' => $opts ];
+		}
+		//default opts
+		$opts = array_merge([
+			'object' => null,
+			'key' => null,
+			'val' => '%%null%%',
+		], $opts);
 		//get class
 		$class = static::class;
-		//generate meta?
+		//generate meta template?
 		if(!isset(self::$__metaTpl[$class])) {
 			//meta data
 			$meta = [
@@ -346,6 +356,7 @@ class Model {
 				'readonly' => false,
 				'hydrating' => false,
 				'processing' => false,
+				'isNew' => true,
 			];
 			//default rel
 			$defRel = [
@@ -411,12 +422,14 @@ class Model {
 			//set template
 			self::$__metaTpl[$class] = $meta;
 		}
-		//return key?
-		if($key && isset(self::$__metaTpl[$class][$key])) {
-			return self::$__metaTpl[$class][$key];
+		//update object value?
+		if($opts['object'] && $opts['key'] && $opts['val'] !== '%%null%%') {
+			$opts['object']->__meta[$opts['key']] = $opts['val'];
 		}
+		//get meta data
+		$meta = $opts['object'] ? $opts['object']->__meta : self::$__metaTpl[$class];
 		//return
-		return $key ? null : self::$__metaTpl[$class];
+		return $opts['key'] ? (isset($meta[$opts['key']]) ? $meta[$opts['key']] : null) : $meta;
 	}
 
 }
