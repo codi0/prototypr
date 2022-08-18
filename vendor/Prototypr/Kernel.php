@@ -135,7 +135,7 @@ namespace Prototypr {
 				'custom_error_log' => true,
 			], $this->config);
 			//cache instance
-			self::$_instances[$this->config['instance']] = $this;
+			self::$_instances[$this->config['instance']] = $this->services['kernel'] = $this;
 			//format base url
 			$this->config['base_url'] = $this->config['base_url'] ?: ($host . '/' . trim($scriptBase, '/'));
 			$this->config['base_url'] = rtrim($this->config['base_url'], '/') . '/';
@@ -856,11 +856,16 @@ namespace Prototypr {
 		public function input($key=null, $clean='html') {
 			//set vars
 			$global = null;
+			$globVars = [ 'GET', 'POST', 'COOKIE', 'REQUEST', 'SERVER' ];
 			//ensure globals set
 			$_GET; $_POST; $_COOKIE; $_REQUEST; $_SERVER;
-			//compound key?
-			if($key && strpos($key, '.') !== false) {
-				list($global, $key) = explode('.', $key, 2);
+			//inspect key?
+			if(!empty($key)) {
+				if(strpos($key, '.') !== false) {
+					list($global, $key) = explode('.', $key, 2);
+				} else if(in_array(strtoupper($key), $globVars)) {
+					$global = $key;
+				}
 			}
 			//format global
 			$global = strtoupper($global ?: $_SERVER['REQUEST_METHOD']);

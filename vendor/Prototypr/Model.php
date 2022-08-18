@@ -125,11 +125,16 @@ class Model {
 		$this->onValidate();
 		//check relations
 		foreach($this->__meta['relations'] as $prop => $meta) {
-			//is relation valid?
-			if($meta['onValidate'] && !$this->$prop->isValid()) {
-				//set errors
-				foreach($this->$prop->errors() as $k => $v) {
-					$this->addError($k, $v);
+			//get relation
+			$rel = $this->$prop;
+			//can validate?
+			if($meta['onValidate'] && $rel) {
+				//is relation valid?
+				if(!$rel->isValid()) {
+					//set errors
+					foreach($rel->errors() as $k => $v) {
+						$this->addError($k, $v);
+					}
 				}
 			}
 		}
@@ -169,11 +174,12 @@ class Model {
 		}
 		//check relations
 		foreach($this->__meta['relations'] as $prop => $meta) {
+			//get relation
+			$rel = $this->$prop;
 			//can set?
-			if($meta['onSet']) {
+			if($meta['onSet'] && $rel) {
 				//set vars
 				$tmp = $data;
-				$rel = $this->$prop;
 				$field = isset($opts['relFields'][$prop]) ? $opts['relFields'][$prop] : $prop;
 				//is proxy?
 				if($rel instanceof Proxy) {
@@ -234,11 +240,16 @@ class Model {
 			$this->__meta['processing'] = true;
 			//check relations
 			foreach($this->__meta['relations'] as $prop => $meta) {
-				//save relation now?
-				if($meta[$hook] && !$this->$prop->$method()) {
-					//set errors
-					foreach($this->$prop->errors() as $k => $v) {
-						$this->addError($k, $v);
+				//get relation
+				$rel = $this->$prop;
+				//can save?
+				if($meta[$hook] && $rel) {
+					//save relation?
+					if(!$rel->$method()) {
+						//set errors
+						foreach($rel->errors() as $k => $v) {
+							$this->addError($k, $v);
+						}
 					}
 				}
 			}
