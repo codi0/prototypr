@@ -79,9 +79,11 @@ class Api {
 				], $route);
 				//set callback?
 				if(!$route['callback']) {
-					$cb = [ $this, $method ];
-					$route['callback'] = function() use($cb) { return $cb(); };
+					$route['callback'] = [ $this, $method ];
 				}
+				//wrap callback
+				$cb = $route['callback'];
+				$route['callback'] = function() use($cb) { return $cb(); };
 				//format path
 				$route['path'] = $this->basePath . ltrim($route['path'], '/');
 				//format auth?
