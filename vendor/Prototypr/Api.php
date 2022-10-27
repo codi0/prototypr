@@ -18,16 +18,19 @@ class Api {
 		'home' => [
 			'path' => '',
 			'auth' => false,
+			'hide' => false,
 			'methods' => [],
 		],
 		'unauthorized' => [
 			'path' => '401',
 			'auth' => false,
+			'hide' => false,
 			'methods' => [],
 		],
 		'notFound' => [
 			'path' => '404',
 			'auth' => false,
+			'hide' => false,
 			'methods' => [],
 		],
 	];
@@ -71,14 +74,17 @@ class Api {
 					'path' => '',
 					'auth' => null,
 					'methods' => [],
+					'hide' => false,
 				], $route);
 				//set callback
 				$route['callback'] = [ $this, $method ];
 				//format path
 				$route['path'] = $this->basePath . ltrim($route['path'], '/');
 				//format auth?
-				if($route['auth']) {
+				if($route['auth'] === true) {
 					$route['auth'] = [ $this, 'auth' ];
+				} else if($route['auth']) {
+					$route['auth'] = [ $this, $route['auth'] ];
 				}
 				//add dev methods?
 				if($this->devMethods && $route['methods'] && $this->kernel->isEnv('dev')) {
@@ -104,6 +110,10 @@ class Api {
 		foreach($this->routes as $method => $route) {
 			//get path
 			$path = $route['path'];
+			//skip display?
+			if($route['hide']) {
+				continue;
+			}
 			//is home?
 			if(stripos($method, 'home') !== false) {
 				continue;
