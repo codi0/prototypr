@@ -1480,6 +1480,28 @@ namespace Prototypr {
 			return $html;
 		}
 
+		public function backtrace() {
+			//set vars
+			$output = [];
+			$backtrace = debug_backtrace();
+			//loop through backtrace
+			foreach($backtrace as $index => $item) {
+				//skip index?
+				if(!$index) continue;
+				//set function
+				$fn = $item['function'] . '()';
+				$file = isset($item['file']) ? str_replace($this->config('base_dir') . '/', '', $item['file']) : '';
+				//has class?
+				if(isset($item['type']) && $item['type']) {
+					$fn = $item['class'] . $item['type'] . $fn;
+				}
+				//add to output
+				$output[] = $fn . ($file ? ' in ' . $file . ' @ ' . $item['line'] : '');
+			}
+			//return
+			return $output;
+		}
+
 		public function logException($e, $display=true) {
 			//set vars
 			$severity = '';

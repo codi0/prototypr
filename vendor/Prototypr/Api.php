@@ -75,9 +75,13 @@ class Api {
 					'auth' => null,
 					'methods' => [],
 					'hide' => false,
+					'callback' => null,
 				], $route);
-				//set callback
-				$route['callback'] = [ $this, $method ];
+				//set callback?
+				if(!$route['callback']) {
+					$cb = [ $this, $method ];
+					$route['callback'] = function() use($cb) { return $cb(); };
+				}
 				//format path
 				$route['path'] = $this->basePath . ltrim($route['path'], '/');
 				//format auth?
@@ -149,6 +153,18 @@ class Api {
 		$this->respond([
 			'code' => 404,
 		]);
+	}
+
+	public function addEndpoint($path, $callback, array $meta=[]) {
+		//is callable?
+		if(!is_callable($callback)) {
+			throw new \Exception("Invalid callback for API endpoint");
+		}
+		//set vars
+		$meta['callback'] = $callback;
+		$meta['path'] = trim($path, '/');
+		//add route
+		$this->routes[] = $meta;
 	}
 
 	protected function addData($key, $val) {
