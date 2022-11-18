@@ -200,11 +200,19 @@ namespace Prototypr {
 			}));
 			//fatal error handler
 			register_shutdown_function($this->bind(function() {
-				//get last error
+				//set vars
 				$error = error_get_last();
-				//log exception?
+				$httpCode = http_response_code();
+				//log php exception?
 				if($error && in_array($error['type'], [ E_ERROR, E_CORE_ERROR ])) {
 					$this->logException(new \ErrorException($error['message'], 0, $error['type'], $error['file'], $error['line']));
+				}
+				//log server error?
+				if($httpCode >= 500) {
+					//build error message
+					$errMsg = 'HTTP ' . $httpCode . ' ' . $_SERVER['REQUEST_METHOD'] . ':  ' . $_SERVER['HTTP_HOST'] . ' ' . $_SERVER['REQUEST_URI'] . ($_POST ? ' ' . json_encode($_POST) : '');
+					//app log error
+					$this->log('errors', $errMsg);
 				}
 			}));
 			//create default dirs
@@ -761,7 +769,19 @@ namespace Prototypr {
 		}
 
 		public function log($name, $data='%%null%%') {
-			return $this->cache($this->config('logs_dir') . "/{$name}.log", $data, [ 'append' => true ]);	
+			//add date prefix?
+			if($data !== '%%null%%' && is_string($data)) {
+				$data = '[' . date('Y-m-d H:i:s') . '] ' . $data;
+			}
+			//save to cache
+			$res = $this->cache($this->config('logs_dir') . "/{$name}.log", $data, [ 'append' => true ]);
+			//log event
+			$this->event('app.log', [
+				'name' => $name,
+				'data' => ($data === '%%null%%') ? null : $data,
+			]);
+			//return
+			return $res;
 		}
 
 		public function cache($path, $data='%%null%%', array $opts=[]) {
