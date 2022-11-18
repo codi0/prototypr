@@ -132,7 +132,6 @@ namespace Prototypr {
 				'version' => null,
 				'theme' => null,
 				'annotations' => false,
-				'custom_error_log' => true,
 			], $this->config);
 			//cache instance
 			self::$_instances[$this->config['instance']] = $this->services['kernel'] = $this;
@@ -142,7 +141,6 @@ namespace Prototypr {
 			//script included?
 			if($this->config['included']) {
 				$this->config['autorun'] = null;
-				$this->config['custom_error_log'] = false;
 			}
 			//guess env?
 			if(!$this->config['env']) {
@@ -190,28 +188,25 @@ namespace Prototypr {
 					}
 				}
 			}
-			//custom error handling?
-			if(!$this->config['included']) {
-				//error reporting
-				error_reporting(E_ALL);
-				ini_set('display_errors', 0);
-				ini_set('display_startup_errors', 0);
-				//exception handler
-				set_exception_handler([ $this, 'logException' ]);
-				//error handler
-				set_error_handler($this->bind(function($type, $message, $file, $line) {
-					$this->logException(new \ErrorException($message, 0, $type, $file, $line));
-				}));
-				//fatal error handler
-				register_shutdown_function($this->bind(function() {
-					//get last error
-					$error = error_get_last();
-					//log exception?
-					if($error && in_array($error['type'], [ E_ERROR, E_CORE_ERROR ])) {
-						$this->logException(new \ErrorException($error['message'], 0, $error['type'], $error['file'], $error['line']));
-					}
-				}));
-			}
+			//set error reporting
+			error_reporting(E_ALL);
+			ini_set('display_errors', 0);
+			ini_set('display_startup_errors', 0);
+			//exception handler
+			set_exception_handler([ $this, 'logException' ]);
+			//error handler
+			set_error_handler($this->bind(function($type, $message, $file, $line) {
+				$this->logException(new \ErrorException($message, 0, $type, $file, $line));
+			}));
+			//fatal error handler
+			register_shutdown_function($this->bind(function() {
+				//get last error
+				$error = error_get_last();
+				//log exception?
+				if($error && in_array($error['type'], [ E_ERROR, E_CORE_ERROR ])) {
+					$this->logException(new \ErrorException($error['message'], 0, $error['type'], $error['file'], $error['line']));
+				}
+			}));
 			//create default dirs
 			foreach([ 'cache_dir', 'config_dir', 'logs_dir', 'modules_dir', 'vendor_dirs' ] as $k) {
 				//get dir
@@ -766,13 +761,6 @@ namespace Prototypr {
 		}
 
 		public function log($name, $data='%%null%%') {
-			//use default error log?
-			if($name === 'errors' && $data !== '%%null%%') {
-				if(!$this->config('custom_error_log')) {
-					return error_log(explode("]", $data, 2)[1]);
-				}
-			}
-			//use custom log
 			return $this->cache($this->config('logs_dir') . "/{$name}.log", $data, [ 'append' => true ]);	
 		}
 
@@ -1504,23 +1492,20 @@ namespace Prototypr {
 
 		public function logException($e, $display=true) {
 			//set vars
-			$severity = '';
-			//get severity?
-			if(method_exists($e, 'getSeverity')) {
-				$names = [];
-				$severity = $e->getSeverity();
-				$consts = array_flip(array_slice(get_defined_constants(true)['Core'], 0, 15, true));
-				foreach($consts as $code => $name) {
-					if($severity & $code) {
-						$names[] = $name;
-					}
+			$type = 'ERROR';
+			$severity = method_exists($e, 'getSeverity') ? $e->getSeverity() : 0;
+			$consts = array_flip(array_slice(get_defined_constants(true)['Core'], 0, 15, true));
+			//get severity
+			foreach($consts as $code => $name) {
+				if($severity && $severity == $code) {
+					$type = str_replace('E_', '', $name);
 				}
-				$severity = implode(', ', $names);
 			}
 			//error parts
 			$error = [
 				'date' => date('Y-m-d H:i:s'),
-				'type' => $severity ? $severity : get_class($e),
+				'type' => $type,
+				'severity' => $severity,
 				'message' => $e->getMessage(),
 				'line' => $e->getLine(),
 				'file' => $e->getFile(),
@@ -1530,26 +1515,28 @@ namespace Prototypr {
 			];
 			//custom error handling?
 			if($error = $this->event('app.error', $error)) {
-				//meta data
-				$meta = $error['type'] . " in " . str_replace($this->config('base_dir') . '/', '', $error['file']) . " on line " . $error['line'];
-				//log error
-				$this->log('errors', "[" . $error['date'] . "]\n" . $meta . "\n" . $error['message'] . "\n");
+				//build error message
+				$errMsg = 'PHP ' . $error['type'] . ':  ' . $error['message'] . ' in ' . $error['file'] . ' on line ' . $error['line'];
+				//php error log
+				error_log($errMsg);
+				//app log error
+				$this->log('errors', $errMsg);
 				//display error?
 				if($error['display']) {
+					//is dev?
 					if($this->isEnv('dev')) {
-						echo '<div class="error" style="margin:1em 0; padding: 0.5em; border:1px red solid;">';
-						echo $meta;
-						echo '<br><br>';
-						echo $error['message'];
-						echo '<br><br>';
+						echo '<div class="err" style="margin:1em 0; padding: 0.5em; border:1px red solid;">';
+						echo $errMsg . ' <a href="javascript:void(0);" onclick="this.nextSibling.style.display=\'block\';">[show trace]</a>';
+						echo '<div style="display:none; padding-top:15px;">';
 						foreach($error['debug'] as $k => $v) {
 							echo '<b>' . $k . '</b>: ' . var_export($v, true);
 							echo '<br><br>';
 						}
 						echo str_replace("\n", "<br>", $error['trace']);
 						echo '</div>';
+						echo '</div>';
 						echo "\n";
-					} else {
+					} else if(preg_match('/ERROR|PARSE/i', $error['type'])) {
 						if($this->path('500')) {
 							$this->tpl('500');
 						} else {
