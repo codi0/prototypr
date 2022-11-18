@@ -180,6 +180,8 @@ class Api {
 	protected function respond(array $response, array $auditData=[]) {
 		//format response
         $response = $this->formatResponse($response);
+        //api response event
+        $response = $this->kernel->event('api.response', $response);
         //audit response
         $this->auditLog($response, $auditData);
         //send response
