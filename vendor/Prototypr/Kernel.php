@@ -67,12 +67,12 @@ namespace Prototypr {
 			$this->_startTime = microtime(true);
 			$this->_startMem = memory_get_usage();
 			//base vars
-			$cli = (php_sapi_name() === 'cli');
+			$isCli = (php_sapi_name() === 'cli');
 			$incFrom = explode('/vendor/', str_replace("\\", "/", dirname(array_reverse(get_included_files())[1])))[0];
 			$baseDir = (isset($opts['base_dir']) && $opts['base_dir']) ? $opts['base_dir'] : $incFrom;
 			$baseUrl = (isset($opts['base_url']) && $opts['base_url']) ? $opts['base_url'] : '';
 			//is cli?
-			if($cli !== false) {
+			if($isCli) {
 				//loop through argv
 				foreach($_SERVER['argv'] as $arg) {
 					//match found?
@@ -83,11 +83,22 @@ namespace Prototypr {
 				}
 				//parse url
 				$parse = $baseUrl ? parse_url($baseUrl) : [];
-				//emulate vars
-				$_SERVER['HTTPS'] = (isset($parse['scheme']) && $parse['scheme'] === 'https') ? 'on' : 'off';
-				$_SERVER['HTTP_HOST'] = (isset($parse['host']) && $parse['host']) ? $parse['host'] : '';
-				$_SERVER['REQUEST_URI'] = (isset($parse['path']) && $parse['path']) ? $parse['path'] : '/';
-				$_SERVER['SCRIPT_NAME'] = rtrim($_SERVER['REQUEST_URI'], '/') . '/index.php';
+				//set HTTPS?
+				if(!isset($_SERVER['HTTPS'])) {
+					$_SERVER['HTTPS'] = (isset($parse['scheme']) && $parse['scheme'] === 'https') ? 'on' : 'off';
+				}
+				//set HTTP_HOST?
+				if(!isset($_SERVER['HTTP_HOST'])) {
+					$_SERVER['HTTP_HOST'] = (isset($parse['host']) && $parse['host']) ? $parse['host'] : $_SERVER['SERVER_NAME'];
+				}
+				//set REQUEST_URI?
+				if(!isset($_SERVER['REQUEST_URI'])) {
+					$_SERVER['REQUEST_URI'] = (isset($parse['path']) && $parse['path']) ? $parse['path'] : '/';
+				}
+				//set SCRIPT_NAME?
+				if(!isset($_SERVER['SCRIPT_NAME'])) {
+					$_SERVER['SCRIPT_NAME'] = rtrim($_SERVER['REQUEST_URI'], '/') . '/index.php';
+				}
 			}
 			//url components
 			$port = (isset($_SERVER['SERVER_PORT']) && $_SERVER['SERVER_PORT']) ? $_SERVER['SERVER_PORT'] : 80;
@@ -105,7 +116,7 @@ namespace Prototypr {
 			$this->config = array_merge([
 				//env
 				'env' => null,
-				'cli' => $cli,
+				'cli' => $isCli,
 				'included' => $incFrom !== dirname($_SERVER['SCRIPT_FILENAME']),
 				'autorun' => 'constructor',
 				'webcron' => true,
@@ -145,16 +156,12 @@ namespace Prototypr {
 			//guess env?
 			if(!$this->config['env']) {
 				//set default
-				$env = $this->config['env'] = 'prod';
-				//scan for env in IP / HOST
-				if(isset($_SERVER['REMOTE_ADDR']) && in_array($_SERVER['REMOTE_ADDR'], [ '127.0.0.1', "::1" ])) {
-					$env = 'dev';
-				} else if(isset($_SERVER['HTTP_HOST'])) {
-					$env = explode('.', $_SERVER['HTTP_HOST'])[0];
-					$env = explode('-', $env)[0];
-				}
+				$this->config['env'] = 'prod';
+				//scan for env in HTTP_HOST
+				$env = explode('.', $_SERVER['HTTP_HOST'])[0];
+				$env = explode('-', $env)[0];
 				//match found?
-				if(in_array($env, $this->envs)) {
+				if($env && in_array($env, $this->envs)) {
 					$this->config['env'] = $env;
 				}
 			}
