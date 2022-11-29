@@ -215,9 +215,9 @@ namespace Prototypr {
 					$this->logException(new \ErrorException($error['message'], 0, $error['type'], $error['file'], $error['line']));
 				}
 				//log server error?
-				if($httpCode >= 500) {
+				if($httpCode < 100 || $httpCode >= 500) {
 					//build error message
-					$errMsg = 'HTTP ' . $httpCode . ' ' . $_SERVER['REQUEST_METHOD'] . ':  ' . $_SERVER['HTTP_HOST'] . ' ' . $_SERVER['REQUEST_URI'] . ($_POST ? ' ' . json_encode($_POST) : '');
+					$errMsg = 'HTTP SERVER ' . $httpCode . ': ' . $this->config('url');
 					//app log error
 					$this->log('errors', $errMsg);
 				}
@@ -1019,65 +1019,102 @@ namespace Prototypr {
 			echo json_encode($data, JSON_PRETTY_PRINT);
 		}
 
-		public function http($url, array $opts=[]) {
+		public function http($url, array $opts=[], $redirects=0) {
+			//set vars
+			$status = 0;
+			$response = '';
+			//heloer: parse headers
+			$parseHeaders = function($headers) {
+				//convert to array?
+				if(!is_array($headers)) {
+					$headers = explode("\r\n", $headers);
+				}
+				//loop through headers
+				foreach($headers as $k => $v) {
+					//delete key
+					unset($headers[$k]);
+					//get key?
+					if(is_numeric($k)) {
+						list($k, $v) = array_map('trim', explode(':', $v, 2));
+					}
+					//add key
+					$headers[strtolower($k)] = $v;
+				
+				}
+				//return
+				return $headers;
+			};
 			//default opts
 			$opts = array_merge([
-				'query' => [],
 				'method' => '',
 				'headers' => [],
+				'query' => [],
 				'body' => '',
 				'user_agent' => isset($_SERVER['HTTP_USER_AGENT']) ? $_SERVER['HTTP_USER_AGENT'] : 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/94.0.4606.81 Safari/537.36',
 				'protocol' => '1.0',
-				'timeout' => 5,
+				'timeout' => 3,
 				'blocking' => 1,
-				'response_headers' => 0,
+				'max_redirects' => 3,
+				'response_headers' => false,
 			], $opts);
-			//format method
-			$opts['method'] = strtoupper(trim($opts['method'])) ?: 'GET';
-			//add query string?
-			if($opts['query']) {
-				$url .= (strpos($url, '?') === false) ? '?' : '&';
-				$url .= (is_array($opts['query']) ? http_build_query($opts['query']) : $opts['query']);
-			}
-			//format headers?
-			if(is_array($opts['headers'])) {
-				$headers = [];
-				foreach($opts['headers'] as $k => $v) {
-					$headers[] = ucfirst(is_numeric($k) ? $v : ($k . ': ' . $v));
-				}
-				$opts['headers'] = trim(implode("\r\n", $headers));
-			}
 			//format body?
 			if(is_array($opts['body'])) {
 				$opts['body'] = http_build_query($opts['body']);
 			}
+			//parse headers
+			$opts['headers'] = $parseHeaders($opts['headers']);
 			//set content type?
-			if($opts['body'] && stripos($opts['headers'], 'Content-Type:') === false) {
-				$opts['headers'] .= "\r\nContent-Type: application/x-www-form-urlencoded";
+			if($opts['body'] && !isset($opts['headers']['content-type'])) {
+				$opts['headers']['content-type'] = "application/x-www-form-urlencoded";
 			}
 			//set content length?
-			if($opts['body'] && stripos($opts['headers'], 'Content-Length:') === false) {
-				$opts['headers'] .= "\r\nContent-Length: " . strlen($opts['body']);
+			if($opts['body'] && !isset($opts['headers']['content-length'])) {
+				$opts['headers']['content-length'] = strlen($opts['body']);
 			}
 			//set user agent?
-			if($opts['user_agent'] && stripos($opts['headers'], 'User-Agent:') === false) {
-				$opts['headers'] .= "\r\nUser-Agent: " . $opts['user_agent'];
+			if($opts['user_agent'] && !isset($opts['headers']['user-agent'])) {
+				$opts['headers']['user-agent'] = $opts['user_agent'];
+			}
+			//cache url
+			$opts['url'] = $url;
+			//format method
+			$opts['method'] = strtoupper(trim($opts['method'])) ?: 'GET';
+			//Event: http.request
+			$opts = $this->event('http.request', $opts);
+			//add query string?
+			if($opts['query']) {
+				$opts['url'] .= (strpos($opts['url'], '?') === false) ? '?' : '&';
+				$opts['url'] .= is_array($opts['query']) ? http_build_query($opts['query']) : $opts['query'];
 			}
 			//parse url
-			$status = 0;
-			$response = '';
-			$parse = parse_url($url);
-			$scheme = ($parse['scheme'] === 'https') ? 'ssl' : 'tcp';
-			$port = ($parse['scheme'] === 'https') ? 443 : 80;
+			$parse = array_merge([
+				'scheme' => '',
+				'port' => 0,
+				'host' => '',
+				'path' => '/',
+				'query' => '',
+			], parse_url($opts['url']));
+			//is ssl?
+			if(in_array($parse['scheme'], [ 'ssl', 'https' ])) {
+				$parse['scheme'] = 'ssl';
+				$parse['port'] = $parse['port'] ?: 443;
+			} else if(in_array($parse['scheme'], [ 'tcp', 'http' ])) {
+				$parse['scheme'] = 'tcp';
+				$parse['port'] = $parse['port'] ?: 80;
+			}
 			//successful connection?
-			if($fp = fsockopen($scheme . '://' . $parse['host'], $port, $errno, $errstr, $opts['timeout'])) {
+			if($fp = fsockopen($parse['scheme'] . '://' . $parse['host'], $parse['port'], $errno, $errmsg, $opts['timeout'])) {
 				//set stream options
 				stream_set_timeout($fp, $opts['timeout']);
 				stream_set_blocking($fp, $opts['blocking']);
-				//set request headers
-				$request  = $opts['method'] . " " . (isset($parse['path']) ? $parse['path'] : '/') . (isset($parse['query']) ? '?' . $parse['query'] : '') . " HTTP/" . $opts['protocol'] . "\r\n";
+				//open request
+				$request  = $opts['method'] . " " . ($parse['path'] ?: '/') . ($parse['query'] ? '?' . $parse['query'] : '') . " HTTP/" . $opts['protocol'] . "\r\n";
 				$request .= "Host: " . $parse['host'] . "\r\n";
-				$request .= $opts['headers'] ? trim($opts['headers']) . "\r\n" : "";
+				//add custom headers
+				foreach($opts['headers'] as $k => $v) {
+					$request .= ucfirst($k) . ": " . $v . "\r\n";
+				}
+				//close request
 				$request .= "Connection: Close\r\n\r\n";
 				$request .= $opts['body'];
 				//send request
@@ -1106,8 +1143,20 @@ namespace Prototypr {
 				$headers = explode("\r\n", $headers);
 				//get status code?
 				if(preg_match('{HTTP\/\S*\s(\d{3})}', $headers[0], $match)) {
-					$status = $match[1];
+					$status = (int) $match[1];
 					unset($headers[0]);
+				}
+				//parse headers
+				$headers = $parseHeaders($headers);
+				//auto redirect?
+				if($status == 301 || $status == 302) {
+					//can follow?
+					if(isset($headers['location'])) {
+						//within max redirects?
+						if($redirects < $opts['max_redirects']) {
+							return $this->http($headers['location'], $opts, ++$redirects);
+						}
+					}
 				}
 				//try to parse body
 				$decode = json_decode($body, true);
@@ -1117,6 +1166,10 @@ namespace Prototypr {
 					$response = [ 'status' => $status, 'headers' => $headers, 'body' => $body ];
 				} else {
 					$response = $body;
+				}
+				//log response error?
+				if($status < 100 || $status >= 400) {
+					$this->log('errors', 'HTTP REQUEST ' . $status . ': ' . $opts['method'] . ' ' . $opts['url']);
 				}
 			}
 			//return
