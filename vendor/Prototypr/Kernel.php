@@ -560,11 +560,11 @@ namespace Prototypr {
 				//handle service
 				if($obj instanceof \Closure) {
 					$this->config("{$name}_closure", $this->bind($obj));
-				} else if(is_string($obj)) {
-					$this->config("{$name}_class", $obj);
-				} else {
+				} else if(is_object($obj)) {
 					$this->services[$name] = $obj;
 					$this->config("{$name}_class", get_class($obj));
+				} else {
+					$this->config("{$name}_class", $obj);
 				}
 				//stop here
 				return true;
@@ -719,9 +719,9 @@ namespace Prototypr {
 
 		public function route($route, $callback=null, $isPrimary=false) {
 			//execute route?
-			if(!is_array($route) && !is_callable($callback)) {
+			if(is_scalar($route) && !is_object($callback) && !is_callable($callback)) {
 				//format path
-				$path = trim($route, '/');
+				$path = trim($route ?: '', '/');
 				//route exists?
 				if(isset($this->routes[$path])) {
 					//cache route
@@ -753,22 +753,39 @@ namespace Prototypr {
 				//not found
 				return false;
 			}
-			//format path
-			$path = is_array($route) ? $route['path'] : $route;
-			$path = trim($path, '/');
-			//build array
-			$route = array_merge([
-				'callback' => null,
-				'methods' => [],
-				'auth' => null,
-				'module' => $this->config('module_loading'),
-			], is_array($route) ? $route : []);
-			//bind callback
-			$route['callback'] = $this->bind($callback ?: $route['callback']);
-			//has valid callback?
-			if(!is_callable($route['callback'])) {
+			//format route?
+			if(is_scalar($route)) {
+				//set path
+				$path = trim($route ?: '', '/');
+				$route = [];
+				//set callback as route?
+				if(is_object($callback) && !is_callable($callback)) {
+					$route = $callback;
+					$callback = null;
+				}
+			} else {
+				//set path
+				$path = trim($route['path'], '/');
+			}
+			//is array?
+			if(is_array($route)) {
+				//set defaults
+				$route = array_merge([
+					'callback' => null,
+					'methods' => [],
+					'auth' => null,
+				], $route);
+			}
+			//valid callback?
+			if(is_callable($callback)) {
+				$route['callback'] = $callback;
+			} else if(!is_callable($route['callback'])) {
 				throw new \Exception("Route $path requires a valid callback");
 			}
+			//bind callback
+			$route['callback'] = $this->bind($route['callback']);
+			//set module
+			$route['module'] = $this->config('module_loading');
 			//cache route
 			$this->routes[$path] = $route;
 			//return

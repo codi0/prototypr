@@ -100,7 +100,7 @@ class Validator {
 	}
 
 	protected function ruleRequired($value) {
-		if(empty($value)) {
+		if($value === null || $value === '') {
 			return ':label is required';
 		}
 	}

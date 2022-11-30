@@ -14,24 +14,29 @@ class Api {
 	protected $jsonReqBody = '';
 	protected $hasRun = false;
 
-	protected $routes = [
-		'home' => [
+	protected $routes = [];
+
+	protected $baseRoutes = [
+		[
 			'path' => '',
+			'methods' => [],
+			'callback' => [ '$this', 'home' ],
 			'auth' => false,
 			'hide' => false,
-			'methods' => [],
 		],
-		'unauthorized' => [
+		[
 			'path' => '401',
-			'auth' => false,
-			'hide' => false,
 			'methods' => [],
+			'callback' => [ '$this', 'unauthorized' ],
+			'auth' => false,
+			'hide' => true,
 		],
-		'notFound' => [
+		[
 			'path' => '404',
-			'auth' => false,
-			'hide' => false,
 			'methods' => [],
+			'callback' => [ '$this', 'notfound' ],
+			'auth' => false,
+			'hide' => true,
 		],
 	];
 
@@ -51,51 +56,66 @@ class Api {
 					$this->jsonReqBody = $body;
 				}
 			}
-			//set vars
-			$pRoutes = array();
-			$ref = new \ReflectionObject($this);
-			//get parent routes
-			while($parent = $ref->getParentClass()) {
-				//get default props
-				$props = $parent->getDefaultProperties();
-				//has routes prop?
-				if($props && isset($props['routes']) && is_array($props['routes'])) {
-					$pRoutes = array_merge($props['routes'], $pRoutes);
-				}
-				//next loop
-				$ref = $parent;
-			}
-			//merge parent routes
-			$this->routes = array_merge($pRoutes, $this->routes, $routes);
+			//merge base routes
+			$this->routes = array_merge($this->baseRoutes, $this->routes);
 			//loop through routes
-			foreach($this->routes as $method => $route) {
-				//format route
-				$route = array_merge([
-					'path' => '',
-					'auth' => null,
-					'methods' => [],
-					'hide' => false,
-					'callback' => null,
-				], $route);
-				//set callback?
-				if(!$route['callback']) {
-					$route['callback'] = [ $this, $method ];
+			foreach($this->routes as $index => $route) {
+				//is array?
+				if(is_array($route)) {
+					//set array defaults
+					$route = array_merge([
+						'path' => '',
+						'methods' => [],
+						'callback' => null,
+						'auth' => null,
+						'hide' => false,
+					], $route);
+				} else if(is_string($route)) {
+					//create object
+					$route = new $route;
 				}
-				//wrap callback
+				//replace $this?
+				if($route['callback'] && is_array($route['callback'])) {
+					if($route['callback'][0] === '$this') {
+						$route['callback'][0] = $this;
+					}
+				}
+				//cache callback
+				$ctx = $this;
 				$cb = $route['callback'];
-				$route['callback'] = function() use($cb) { return $cb(); };
-				//format path
-				$route['path'] = $this->basePath . ltrim($route['path'], '/');
+				//wrap callback
+				$route['callback'] = function() use($cb, $ctx) {
+					//buffer
+					ob_start();
+					//execute callback
+					$res = call_user_func($cb);
+					//display response?
+					if($echo = ob_get_clean()) {
+						echo $echo;
+						return;
+					}
+					//valid response?
+					if(!is_array($res)) {
+						throw new \Exception("API endpoint route must return an array");
+					}
+					//respond
+					return $ctx->respond($res);
+				};
 				//format auth?
 				if($route['auth'] === true) {
 					$route['auth'] = [ $this, 'auth' ];
-				} else if($route['auth']) {
+				} else if($route['auth'] && !is_callable($route['auth'])) {
 					$route['auth'] = [ $this, $route['auth'] ];
 				}
 				//add dev methods?
 				if($this->devMethods && $route['methods'] && $this->kernel->isEnv('dev')) {
 					$route['methods'] = array_unique(array_merge($route['methods'], $this->devMethods));
 				}
+				//format path
+				$route['path_org'] = $route['path'];
+				$route['path'] = $this->basePath . ltrim($route['path'], '/');
+				//cache route
+				$this->routes[$index] = $route;
 				//add route
 				$this->kernel->route($route);
 			}
@@ -104,8 +124,19 @@ class Api {
 		return $this;
 	}
 
+	public function respond(array $response, array $auditData=[]) {
+		//format response
+        $response = $this->formatResponse($response);
+        //api response event
+        $response = $this->kernel->event('api.response', $response);
+        //audit response
+        $this->auditLog($response, $auditData);
+        //send response
+        $this->kernel->json($response);
+	}
+
 	public function auth() {
-		throw new \Exception("Please define an auth method, to use API authentication");
+		throw new \Exception("Define an inherited auth method, to use API authentication");
 	}
 
 	public function home($prefix='') {
@@ -113,15 +144,11 @@ class Api {
 		$endpoints = [];
 		$prefix = trim($prefix ?: '', '/');
 		//loop through routes
-		foreach($this->routes as $method => $route) {
-			//get path
-			$path = $route['path'];
+		foreach($this->routes as $route) {
+			//set vars
+			$path = $route['path_org'];
 			//skip display?
 			if($route['hide']) {
-				continue;
-			}
-			//is home?
-			if(stripos($method, 'home') !== false) {
 				continue;
 			}
 			//has prefix?
@@ -133,31 +160,38 @@ class Api {
 			$path = trim($path, '/');
 			//add endpoint?
 			if($path && !is_numeric($path)) {
-				$endpoints[] = $path;
+				$endpoints[$path] = $route['methods'];
 			}
 		}
-		//send response
-		$this->respond([
+		//return
+		return [
 			'code' => 200,
 			'data' => [
 				'endpoints' => $endpoints,
 			],
-		]);
+		];
 	}
 
 	public function unauthorized() {
-		$this->respond([
+		//return
+		return [
 			'code' => 401,
-		]);
+		];
 	}
 
-	public function notFound() {
-		$this->respond([
+	public function notfound() {
+		//return
+		return [
 			'code' => 404,
-		]);
+		];
 	}
 
-	public function addEndpoint($path, $callback, array $meta=[]) {
+	public function addEndpoint($path, $callback=null, array $meta=[]) {
+		//add directly?
+		if(is_array($path) || is_object($path)) {
+			$this->routes[] = $path;
+			return;
+		}
 		//is callable?
 		if(!is_callable($callback)) {
 			throw new \Exception("Invalid callback for API endpoint");
@@ -175,17 +209,6 @@ class Api {
 
 	protected function addError($key, $val) {
 		$this->errors[$key] = $val;
-	}
-
-	protected function respond(array $response, array $auditData=[]) {
-		//format response
-        $response = $this->formatResponse($response);
-        //api response event
-        $response = $this->kernel->event('api.response', $response);
-        //audit response
-        $this->auditLog($response, $auditData);
-        //send response
-        $this->kernel->json($response);
 	}
 
 	protected function formatResponse(array $response) {

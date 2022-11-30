@@ -5,23 +5,11 @@ namespace App;
 class Api extends \Prototypr\Api {
 
 	protected $basePath = '/api/';
-
+	
 	protected $routes = [
-		'v1Home' => [
-			'path' => 'v1',
-			'auth' => false,
-			'methods' => [],
-		],
-		'v1Report' => [
-			'path' => 'v1/report',
-			'auth' => true,
-			'methods' => [ 'POST', 'PUT' ],
-		],
-		'v1Check' => [
-			'path' => 'v1/check',
-			'auth' => true,
-			'methods' => [ 'GET' ],
-		],
+		'App\Api\V1\Home',
+		'App\Api\V1\Check',
+		'App\Api\V1\Report',
 	];
 
 	public function getKeyHeader() {
@@ -47,34 +35,6 @@ class Api extends \Prototypr\Api {
 		}
 		//return
 		return $result;
-	}
-
-	public function v1Home() {
-		$this->home('v1');
-	}
-
-	public function v1Report(array $params) {
-		//TO-DO: define api endpoint logic here
-		$data = [
-			'record_id' => 1,
-		];
-		//set response
-		$this->respond([
-			'code' => 200,
-			'data' => $data,
-		]);
-	}
-
-	public function v1Check(array $params) {
-		//TO-DO: define api endpoint logic here
-		$data = [
-			'record_id' => 1,
-		];
-		//set response
-		$this->respond([
-			'code' => 200,
-			'data' => $data,
-		]);
 	}
 
 	protected function formatResponse(array $response) {
