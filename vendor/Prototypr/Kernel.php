@@ -29,13 +29,6 @@ namespace Prototypr {
 		private $routes = [];
 		private $services = [];
 
-		private $envs = [
-			'dev',
-			'qa',
-			'staging',
-			'prod',
-		];
-
 		private $httpMessages = [
 			200 => 'Ok',
 			400 => 'Bad Request',
@@ -73,6 +66,8 @@ namespace Prototypr {
 			$baseUrl = (isset($opts['base_url']) && $opts['base_url']) ? $opts['base_url'] : '';
 			//is cli?
 			if($isCli) {
+				//set vars
+				$parseUrl = [];
 				//loop through argv
 				foreach($_SERVER['argv'] as $arg) {
 					//match found?
@@ -81,19 +76,21 @@ namespace Prototypr {
 						break;
 					}
 				}
-				//parse url
-				$parse = $baseUrl ? parse_url($baseUrl) : [];
+				//can parse?
+				if(!empty($baseUrl)) {
+					$parseUrl = parse_url($baseUrl) ?: [];
+				}
 				//set HTTPS?
 				if(!isset($_SERVER['HTTPS'])) {
-					$_SERVER['HTTPS'] = (isset($parse['scheme']) && $parse['scheme'] === 'https') ? 'on' : 'off';
+					$_SERVER['HTTPS'] = (isset($parseUrl['scheme']) && $parseUrl['scheme'] === 'https') ? 'on' : 'off';
 				}
 				//set HTTP_HOST?
 				if(!isset($_SERVER['HTTP_HOST'])) {
-					$_SERVER['HTTP_HOST'] = (isset($parse['host']) && $parse['host']) ? $parse['host'] : $_SERVER['SERVER_NAME'];
+					$_SERVER['HTTP_HOST'] = (isset($parseUrl['host']) && $parseUrl['host']) ? $parseUrl['host'] : '';
 				}
 				//set REQUEST_URI?
 				if(!isset($_SERVER['REQUEST_URI'])) {
-					$_SERVER['REQUEST_URI'] = (isset($parse['path']) && $parse['path']) ? $parse['path'] : '/';
+					$_SERVER['REQUEST_URI'] = (isset($parseUrl['path']) && $parseUrl['path']) ? $parseUrl['path'] : '/';
 				}
 				//set SCRIPT_NAME?
 				if(!isset($_SERVER['SCRIPT_NAME'])) {
@@ -103,7 +100,8 @@ namespace Prototypr {
 			//url components
 			$port = (isset($_SERVER['SERVER_PORT']) && $_SERVER['SERVER_PORT']) ? $_SERVER['SERVER_PORT'] : 80;
 			$ssl = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS']) ? ($_SERVER['HTTPS'] !== 'off') : ($port == 443);
-			$host = 'http' . ($ssl ? 's' : '') . '://' . $_SERVER['HTTP_HOST'];
+			$domain = isset($_SERVER['HTTP_HOST']) ? $_SERVER['HTTP_HOST'] : '';
+			$host = 'http' . ($ssl ? 's' : '') . '://' . $domain;
 			$reqBase = explode('?', $_SERVER['REQUEST_URI'])[0];
 			$scriptBase = dirname($_SERVER['SCRIPT_NAME']) ?: '/';
 			//loop through opts
@@ -116,6 +114,7 @@ namespace Prototypr {
 			$this->config = array_merge([
 				//env
 				'env' => null,
+				'debug' => null,
 				'cli' => $isCli,
 				'included' => $incFrom !== dirname($_SERVER['SCRIPT_FILENAME']),
 				'autorun' => 'constructor',
@@ -134,6 +133,7 @@ namespace Prototypr {
 				'url' => $host . $_SERVER['REQUEST_URI'],
 				'base_url' => null,
 				'pathinfo' => trim(str_replace(($scriptBase === '/' ? '' : $scriptBase), '', $reqBase), '/'),
+				'allowed_hosts' => [],
 				//modules
 				'modules' => [],
 				'module_loading' => '',
@@ -153,47 +153,65 @@ namespace Prototypr {
 			if($this->config['included']) {
 				$this->config['autorun'] = null;
 			}
-			//guess env?
-			if(!$this->config['env']) {
-				//set default
-				$this->config['env'] = 'prod';
-				//scan for env in HTTP_HOST
-				$env = explode('.', $_SERVER['HTTP_HOST'])[0];
-				$env = explode('-', $env)[0];
-				//match found?
-				if($env && in_array($env, $this->envs)) {
-					$this->config['env'] = $env;
-				}
-			}
-			//merge env config?
-			if(isset($opts["config." . $this->config['env']])) {
-				$this->config = array_merge($this->config, $opts["config." . $this->config['env']]);
-			}
 			//config file store
-			$configFiles = [ 'global' => [], 'env' => [] ];
+			$configFiles = [];
 			//check config directory for matches
 			foreach(glob($this->config['config_dir'] . '/*.php') as $file) {
 				//look for env
 				$parts = explode('.', pathinfo($file, PATHINFO_FILENAME), 2);
-				$env = isset($parts[1]) ? $parts[1] : '';
-				//use file?
-				if($env === $this->config['env']) {
-					$configFiles['env'][] = $file;
-				} else if(!$env) {
-					$configFiles['global'][] = $file;
-				}
+				$env = isset($parts[1]) ? $parts[1] : 'global';
+				//add file
+				$configFiles[] = [ $env, $file ];
 			}
-			//loop through file types
-			foreach($configFiles as $files) {
-				//loop through files
-				foreach($files as $file) {
+			//merge global config files
+			foreach($configFiles as $file) {
+				//env match?
+				if($file[0] === 'global') {
 					//include file
-					$conf = include($file);
+					$conf = include($file[1]);
 					//merge config?
 					if($conf && is_array($conf)) {
 						$this->config = array_merge($this->config, $conf);
 					}
 				}
+			}
+			//check allowed hosts?
+			if($domain && $this->config['allowed_hosts']) {
+				//valid host?
+				if(isset($this->config['allowed_hosts'][$domain])) {
+					$this->config['env'] = $this->config['env'] ?: $this->config['allowed_hosts'][$domain];
+				} else {
+					$domain = false;
+				}
+			}
+			//bad request?
+			if(!$domain) {
+				http_response_code(400);
+				die();
+			}
+			//set default env?
+			if(!$this->config['env']) {
+				$this->config['env'] = 'prod';
+			}
+			//merge env config files
+			foreach($configFiles as $file) {
+				//env match?
+				if($file[0] === $this->config['env']) {
+					//include file
+					$conf = include($file[1]);
+					//merge config?
+					if($conf && is_array($conf)) {
+						$this->config = array_merge($this->config, $conf);
+					}
+				}
+			}
+			//merge env local config?
+			if(isset($opts["config." . $this->config['env']])) {
+				$this->config = array_merge($this->config, $opts["config." . $this->config['env']]);
+			}
+			//set default debug?
+			if($this->config['debug'] === null) {
+				$this->config['debug'] = ($this->config['env'] === 'dev');
 			}
 			//set error reporting
 			error_reporting(E_ALL);
@@ -327,6 +345,10 @@ namespace Prototypr {
 		public function isEnv($env) {
 			return in_array($this->config['env'], (array) $env);
 		}
+
+		public function isDebug() {
+			return ($this->config['debug'] === true);
+		}	
 
 		public function bind($callable, $thisArg = null) {
 			//bind closure?
@@ -1511,8 +1533,8 @@ namespace Prototypr {
 			}
 			//get final output
 			$output = trim(ob_get_clean());
-			//add debug bar?
-			if($this->isEnv('dev')) {
+			//show debug bar?
+			if($this->isDebug()) {
 				$output = str_replace('</body>', $this->debug(true) . "\n" . '</body>', $output);
 			}
 			//set response code?
@@ -1620,8 +1642,8 @@ namespace Prototypr {
 				$this->log('errors', $errMsg);
 				//display error?
 				if($error['display']) {
-					//is dev?
-					if($this->isEnv('dev')) {
+					//show debug?
+					if($this->isDebug()) {
 						echo '<div class="err" style="margin:1em 0; padding: 0.5em; border:1px red solid;">';
 						echo $errMsg . ' <a href="javascript:void(0);" onclick="this.nextSibling.style.display=\'block\';">[show trace]</a>';
 						echo '<div style="display:none; padding-top:15px;">';
