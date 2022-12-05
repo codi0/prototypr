@@ -82,7 +82,7 @@ class Api {
 				}
 				//cache callback
 				$ctx = $this;
-				$cb = $route['callback'];
+				$cb = $this->kernel->bind($route['callback'], $this);
 				//wrap callback
 				$route['callback'] = function() use($cb, $ctx) {
 					//buffer
