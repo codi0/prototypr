@@ -10,6 +10,7 @@ class Route implements \ArrayAccess {
 	public $methods = [];
 	public $callback = null;
 	public $params = [];
+
 	public $auth = null;
 	public $hide = false;
 
@@ -33,6 +34,16 @@ class Route implements \ArrayAccess {
 	#[\ReturnTypeWillChange]
 	public function offsetUnset($offset) {
 		$this->$offset = null;
+	}
+
+	public function describe() {
+		return [
+			'path' => $this->path,
+			'methods' => $this->methods,
+			'auth' => !!$this->auth,
+			'hide' => !!$this->hide,
+			'input' => $this->inputFields,
+		];
 	}
 
 	public function doCallback() {

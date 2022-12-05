@@ -203,6 +203,35 @@ class Api {
 		$this->routes[] = $meta;
 	}
 
+	public function describe() {
+		//set vars
+		$result = [];
+		$format = [ 'auth', 'hide' ];
+		$remove = [ 'path_org', 'callback' ];
+		//loop through routes
+		foreach($this->routes as $route) {
+			//is object?
+			if(is_object($route)) {
+				$route = $route->describe();
+			}
+			//format keys
+			foreach($format as $key) {
+				$route[$key] = !!$route[$key];
+			}
+			//remove keys
+			foreach($remove as $key) {
+				//key exists?
+				if(isset($route[$key])) {
+					unset($route[$key]);
+				}
+			}
+			//add to array
+			$result[] = $route;
+		}
+		//return
+		return $result;
+	}
+
 	protected function addData($key, $val) {
 		$this->data[$key] = $val;
 	}
