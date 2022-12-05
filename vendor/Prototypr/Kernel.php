@@ -1585,6 +1585,7 @@ namespace Prototypr {
 				$data['queries'] = $this->db->num_queries;
 				//get query log
 				$data['queries_log'] = array_map(function($item) {
+					$item = is_array($item) ? $item[0] : $item;
 					return preg_replace("/\s+/", " ", $item);
 				}, $this->db->queries);
 			}
