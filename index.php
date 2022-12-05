@@ -13,7 +13,7 @@
  *
  * Config data can be passed directly below, or by creating file(s) containing a php array in the "/data/config/" folder.
  *
- * Open the "/vendor/Prototypr/App.php" file for a full list of config and other options that can be set.
+ * Open the "/vendor/Prototypr/Kernel.php" file for a full list of config and other options that can be set.
  *
 **/
 
