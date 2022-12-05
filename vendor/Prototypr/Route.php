@@ -14,7 +14,8 @@ class Route implements \ArrayAccess {
 	public $auth = null;
 	public $hide = false;
 
-	protected $inputFields = [];
+	protected $inputSchema = [];
+	protected $outputSchema = [];
 
 	#[\ReturnTypeWillChange]
 	public function offsetExists($offset) {
@@ -42,7 +43,8 @@ class Route implements \ArrayAccess {
 			'methods' => $this->methods,
 			'auth' => !!$this->auth,
 			'hide' => !!$this->hide,
-			'input' => $this->inputFields,
+			'input_schema' => $this->inputSchema,
+			'output_schema' => $this->outputSchema,
 		];
 	}
 
@@ -50,21 +52,11 @@ class Route implements \ArrayAccess {
 		//set vars
 		$input = [];
 		$output = [ 'code' => 200, 'errors' => [], 'data' => null ];
-		//loop through input fields
-		foreach($this->inputFields as $field => $meta) {
-			//format meta
-			$meta = array_merge([
-				'source' => 'REQUEST',
-				'required' => false,
-				'default' => null,
-				'rules' => [],
-				'filters' => [],
-			], $meta);
-			//log errors
+		//loop through input schema
+		foreach($this->inputSchema as $field => $meta) {
+			//input vars
 			$errors = [];
-			//get source
 			$source = '_' . strtoupper($meta['source']);
-			//get value
 			$value = isset($GLOBALS[$source][$field]) ? $GLOBALS[$source][$field] : null;
 			//translate value?
 			if($value === 'true') $value = true;
@@ -123,7 +115,21 @@ class Route implements \ArrayAccess {
 	}
 
 	protected function onConstruct(array $opts) {
+		//set callback property
 		$this->callback = [ $this, 'doCallback' ];
+		//loop through input schema
+		foreach($this->inputSchema as $field => $meta) {
+			//format meta
+			$this->inputSchema[$field] = array_merge([
+				'desc' => '',
+				'source' => 'REQUEST',
+				'type' => 'string',
+				'required' => false,
+				'default' => null,
+				'rules' => [],
+				'filters' => [],
+			], $meta);
+		}
 	}
 
 	protected function onValidate($field, $value, array $errors) {

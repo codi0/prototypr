@@ -9,22 +9,28 @@ class Report extends \Prototypr\Route {
 	public $auth = true;
 	public $hide = false;
 
-	protected $inputFields = [
+	protected $inputSchema = [
 		'title' => [
+			'desc' => 'The title of the report',
 			'source' => 'POST',
+			'type' => 'string',
 			'required' => true,
 			'default' => null,
 			'rules' => [],
 			'filters' => [],
 		],
-		'description' => [
+		'url' => [
+			'desc' => 'The url to report',
 			'source' => 'POST',
+			'type' => 'string',
 			'required' => false,
 			'default' => null,
-			'rules' => [],
+			'rules' => [ 'url' ],
 			'filters' => [],
 		],
 	];
+
+	protected $outputSchema = [];
 
 	protected function doRoute(array $input, array $output) {
 		//TO-DO: define api endpoint logic here

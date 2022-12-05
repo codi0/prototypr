@@ -9,7 +9,8 @@ class Home extends \Prototypr\Route {
 	public $auth = false;
 	public $hide = true;
 
-	protected $inputFields = [];
+	protected $inputSchema = [];
+	protected $outputSchema = [];
 
 	public function doCallback() {
 		return $this->kernel->api->home('v1');

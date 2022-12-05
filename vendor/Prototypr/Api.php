@@ -203,30 +203,59 @@ class Api {
 		$this->routes[] = $meta;
 	}
 
-	public function describe() {
-		//set vars
-		$result = [];
-		$format = [ 'auth', 'hide' ];
-		$remove = [ 'path_org', 'callback' ];
+	public function describe($hidden=false) {
+		//results
+		$result = [
+			'server' => $this->kernel->config('base_url'),
+			'endpoints' => [],
+		];
+		//actions
+		$actions = [
+			'auth' => 'bool',
+			'hide' => 'bool',
+			'input_schema' => 'array',
+			'output_schema' => 'array',
+			'callback' => 'unset',
+			'path_org' => 'unset',
+		];
 		//loop through routes
 		foreach($this->routes as $route) {
 			//is object?
 			if(is_object($route)) {
 				$route = $route->describe();
 			}
-			//format keys
-			foreach($format as $key) {
-				$route[$key] = !!$route[$key];
-			}
-			//remove keys
-			foreach($remove as $key) {
-				//key exists?
-				if(isset($route[$key])) {
-					unset($route[$key]);
+			//loop through actions
+			foreach($actions as $key => $action) {
+				//select action
+				if($action === 'unset') {
+					//unset key?
+					if(array_key_exists($key, $route)) {
+						unset($route[$key]);
+					}
+				} else {
+					//set key?
+					if(!isset($route[$key])) {
+						$route[$key] = null;
+					}
+					//is bool?
+					if($action === 'bool') {
+						$route[$key] = !!$route[$key];
+					}
+					//is array?
+					if($action === 'array') {
+						$route[$key] = (array) ($route[$key] ?: []);
+					}
 				}
 			}
+			//is hidden?
+			if(!$hidden && $route['hide']) {
+				continue;
+			}
+			//get path
+			$path = trim($route['path'], '/');
+			unset($route['path']);
 			//add to array
-			$result[] = $route;
+			$result['endpoints'][$path] = $route;
 		}
 		//return
 		return $result;

@@ -9,22 +9,28 @@ class Check extends \Prototypr\Route {
 	public $auth = false;
 	public $hide = false;
 
-	protected $inputFields = [
+	protected $inputSchema = [
 		'title' => [
+			'desc' => 'The title to check',
 			'source' => 'GET',
+			'type' => 'string',
 			'required' => true,
 			'default' => null,
 			'rules' => [],
 			'filters' => [],
 		],
-		'description' => [
+		'url' => [
+			'desc' => 'The url to check',
 			'source' => 'GET',
+			'type' => 'string',
 			'required' => false,
 			'default' => null,
-			'rules' => [],
+			'rules' => [ 'url' ],
 			'filters' => [],
 		],
 	];
+
+	protected $outputSchema = [];
 
 	protected function doRoute(array $input, array $output) {
 		//TO-DO: define api endpoint logic here
