@@ -59,11 +59,32 @@ namespace Prototypr {
 			//debug vars
 			$this->_startTime = microtime(true);
 			$this->_startMem = memory_get_usage();
+			//helper: format dir
+			$formatDir = function($dir) {
+				return str_replace("\\", "/", $dir);
+			};
+			//check for constants
+			foreach([ 'env', 'debug', 'base_dir' ] as $k) {
+				//get const name
+				$const = strtoupper(__NAMESPACE__ . '_' . $k);
+				$val = defined($const) ? constant($const) : null;
+				//set config key?
+				if(!isset($opts['config'])) {
+					$opts['config'] = [];
+				}
+				//override option?
+				if($val !== null && $val !== '') {
+					$opts['config'][$k] = $val;
+				}
+			}
 			//base vars
 			$isCli = (php_sapi_name() === 'cli');
-			$incFrom = explode('/vendor/', str_replace("\\", "/", dirname(array_reverse(get_included_files())[1])))[0];
-			$baseDir = (isset($opts['base_dir']) && $opts['base_dir']) ? $opts['base_dir'] : $incFrom;
-			$baseUrl = (isset($opts['base_url']) && $opts['base_url']) ? $opts['base_url'] : '';
+			$scriptDir = $formatDir(dirname($_SERVER['SCRIPT_FILENAME']));
+			$incFrom = $formatDir(explode('/vendor/', dirname(array_reverse(get_included_files())[1]))[0]);
+			$baseUrl = isset($opts['config']['base_url']) ? $opts['config']['base_url'] : '';
+			$baseDir = isset($opts['config']['base_dir']) ? $opts['config']['base_dir'] : '';
+			//format base dir
+			$baseDir = $opts['config']['base_dir'] = $formatDir($baseDir ?: $incFrom);
 			//is cli?
 			if($isCli) {
 				//set vars
@@ -103,7 +124,7 @@ namespace Prototypr {
 			$domain = isset($_SERVER['HTTP_HOST']) ? $_SERVER['HTTP_HOST'] : '';
 			$host = 'http' . ($ssl ? 's' : '') . '://' . $domain;
 			$reqBase = explode('?', $_SERVER['REQUEST_URI'])[0];
-			$scriptBase = dirname($_SERVER['SCRIPT_NAME']) ?: '/';
+			$scriptBase = $formatDir(dirname($_SERVER['SCRIPT_NAME'])) ?: '/';
 			//loop through opts
 			foreach($opts as $k => $v) {
 				if(property_exists($this, $k)) {
@@ -116,12 +137,12 @@ namespace Prototypr {
 				'env' => null,
 				'debug' => null,
 				'cli' => $isCli,
-				'included' => $incFrom !== dirname($_SERVER['SCRIPT_FILENAME']),
+				'included' => $incFrom !== $scriptDir,
 				'autorun' => 'constructor',
 				'webcron' => true,
 				//dirs
 				'base_dir' => $baseDir,
-				'vendor_dirs' => array_unique([ $baseDir . '/vendor', dirname(__DIR__) ]),
+				'vendor_dirs' => array_unique([ $baseDir . '/vendor', $formatDir(dirname(__DIR__)) ]),
 				'cache_dir' => $baseDir . '/cache',
 				'config_dir' => $baseDir . '/config',
 				'logs_dir' => $baseDir . '/logs',
@@ -247,15 +268,15 @@ namespace Prototypr {
 				$dir = ($dir && is_array($dir)) ? $dir[0] : $dir;
 				//create dir?
 				if($dir && !is_dir($dir)) {
-					mkdir($dir);
+					mkdir($dir, 0755);
 				}
 			}
 			//default file loader
-			spl_autoload_register($this->bind(function($class) {
+			spl_autoload_register($this->bind(function($class) use($formatDir) {
 				//loop through paths
 				foreach($this->config('vendor_dirs') as $path) {
 					//get file path
-					$path .= '/' . str_replace('\\', '/', $class) . '.php';
+					$path .= '/' . $formatDir($class) . '.php';
 					//file exists?
 					if(is_file($path)) {
 						require_once($path);
@@ -840,7 +861,7 @@ namespace Prototypr {
 				'expiry' => 0,
 			], $opts);
 			//add base path?
-			if(strpos($path, '/') !== 0) {
+			if(strpos($path, '/') !== 0 && strpos($path, ':') === false) {
 				$path = $this->config('cache_dir') . '/' . $path;
 			}
 			//add ext?

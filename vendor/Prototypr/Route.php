@@ -15,18 +15,22 @@ class Route implements \ArrayAccess {
 
 	protected $inputFields = [];
 
+	#[\ReturnTypeWillChange]
 	public function offsetExists($offset) {
 		return isset($this->$offset);
 	}
 
+	#[\ReturnTypeWillChange]
 	public function offsetGet($offset) {
 		return isset($this->$offset) ? $this->$offset : null;
 	}
 
+	#[\ReturnTypeWillChange]
 	public function offsetSet($offset, $value) {
 		$this->$offset = $value;
 	}
 
+	#[\ReturnTypeWillChange]
 	public function offsetUnset($offset) {
 		$this->$offset = null;
 	}
