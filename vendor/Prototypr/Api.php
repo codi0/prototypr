@@ -22,7 +22,7 @@ class Api {
 			'methods' => [],
 			'callback' => [ '$this', 'home' ],
 			'auth' => false,
-			'hide' => false,
+			'hide' => true,
 		],
 		[
 			'path' => '401',
@@ -60,64 +60,12 @@ class Api {
 			$this->routes = array_merge($this->baseRoutes, $this->routes);
 			//loop through routes
 			foreach($this->routes as $index => $route) {
-				//is array?
-				if(is_array($route)) {
-					//set array defaults
-					$route = array_merge([
-						'path' => '',
-						'methods' => [],
-						'callback' => null,
-						'auth' => null,
-						'hide' => false,
-					], $route);
-				} else if(is_string($route)) {
-					//create object
-					$route = new $route;
+				//format route
+				$route = $this->formatRoute($route);
+				//unset index?
+				if($index != $route['path']) {
+					unset($this->routes[$index]);
 				}
-				//replace $this?
-				if($route['callback'] && is_array($route['callback'])) {
-					if($route['callback'][0] === '$this') {
-						$route['callback'][0] = $this;
-					}
-				}
-				//cache callback
-				$ctx = $this;
-				$cb = $this->kernel->bind($route['callback'], $this);
-				//wrap callback
-				$route['callback'] = function() use($cb, $ctx) {
-					//buffer
-					ob_start();
-					//execute callback
-					$res = call_user_func($cb);
-					//display response?
-					if($echo = ob_get_clean()) {
-						echo $echo;
-						return;
-					}
-					//valid response?
-					if(!is_array($res)) {
-						throw new \Exception("API endpoint route must return an array");
-					}
-					//respond
-					return $ctx->respond($res);
-				};
-				//format auth?
-				if($route['auth'] === true) {
-					$route['auth'] = [ $this, 'auth' ];
-				} else if($route['auth'] && !is_callable($route['auth'])) {
-					$route['auth'] = [ $this, $route['auth'] ];
-				}
-				//add dev methods?
-				if($this->devMethods && $route['methods'] && $this->kernel->isEnv('dev')) {
-					$route['methods'] = array_unique(array_merge($route['methods'], $this->devMethods));
-				}
-				//format path
-				$route['path_org'] = $route['path'];
-				$route['path'] = $this->basePath . ltrim($route['path'], '/');
-				//cache route
-				$this->routes[$index] = $route;
-				//add route
-				$this->kernel->route($route);
 			}
 		}
 		//chain it
@@ -142,11 +90,11 @@ class Api {
 	public function home($prefix='') {
 		//set vars
 		$endpoints = [];
-		$prefix = trim($prefix ?: '', '/');
+		$prefix = $this->formatPath($prefix ?: '');
 		//loop through routes
 		foreach($this->routes as $route) {
 			//set vars
-			$path = $route['path_org'];
+			$path = $route['path'];
 			//skip display?
 			if($route['hide']) {
 				continue;
@@ -159,7 +107,7 @@ class Api {
 			$path = substr($path, strlen($prefix));
 			$path = trim($path, '/');
 			//add endpoint?
-			if($path && !is_numeric($path)) {
+			if(!empty($path)) {
 				$endpoints[$path] = $route['methods'];
 			}
 		}
@@ -186,29 +134,32 @@ class Api {
 		];
 	}
 
-	public function addEndpoint($path, $callback=null, array $meta=[]) {
-		//add directly?
-		if(is_array($path) || is_object($path)) {
-			$this->routes[] = $path;
-			return;
-		}
-		//is callable?
-		if(!is_callable($callback)) {
-			throw new \Exception("Invalid callback for API endpoint");
-		}
-		//set vars
-		$meta['callback'] = $callback;
-		$meta['path'] = trim($path, '/');
-		//add route
-		$this->routes[] = $meta;
+	public function getUrl($path) {
+		return rtrim($this->kernel->config('base_url'), '/') . '/' . $this->formatPath($path);
 	}
 
-	public function describe($hidden=false) {
-		//results
-		$result = [
-			'server' => $this->kernel->config('base_url'),
-			'endpoints' => [],
-		];
+	public function addEndpoint($path, $callback=null, array $route=[]) {
+		//add directly?
+		if(is_array($path) || is_object($path)) {
+			$route = $path;
+		} else {
+			//set vars
+			$route['callback'] = $callback;
+			$route['path'] = $path;
+		}
+		//format route
+		return $this->formatRoute($route);
+	}
+
+	public function describe($path, $public = false) {
+		//format path
+		$path = $this->formatPath($path);
+		//route exists?
+		if(!isset($this->routes[$path])) {
+			return [];
+		}
+		//get route
+		$route = $this->routes[$path];
 		//actions
 		$actions = [
 			'auth' => 'bool',
@@ -216,49 +167,52 @@ class Api {
 			'input_schema' => 'array',
 			'output_schema' => 'array',
 			'callback' => 'unset',
-			'path_org' => 'unset',
 		];
-		//loop through routes
-		foreach($this->routes as $route) {
-			//is object?
-			if(is_object($route)) {
-				$route = $route->describe();
-			}
-			//loop through actions
-			foreach($actions as $key => $action) {
-				//select action
-				if($action === 'unset') {
-					//unset key?
-					if(array_key_exists($key, $route)) {
-						unset($route[$key]);
-					}
-				} else {
-					//set key?
-					if(!isset($route[$key])) {
-						$route[$key] = null;
-					}
-					//is bool?
-					if($action === 'bool') {
-						$route[$key] = !!$route[$key];
-					}
-					//is array?
-					if($action === 'array') {
-						$route[$key] = (array) ($route[$key] ?: []);
-					}
+		//is public?
+		if($public) {
+			$actions['hide'] = 'unset';
+		}
+		//is object?
+		if(is_object($route)) {
+			$route = $route->describe();
+		}
+		//loop through actions
+		foreach($actions as $key => $action) {
+			//select action
+			if($action === 'unset') {
+				//unset key?
+				if(array_key_exists($key, $route)) {
+					unset($route[$key]);
+				}
+			} else {
+				//set key?
+				if(!isset($route[$key])) {
+					$route[$key] = null;
+				}
+				//is bool?
+				if($action === 'bool') {
+					$route[$key] = !!$route[$key];
+				}
+				//is array?
+				if($action === 'array') {
+					$route[$key] = (array) ($route[$key] ?: []);
 				}
 			}
-			//is hidden?
-			if(!$hidden && $route['hide']) {
-				continue;
+		}
+		//loop through input schema
+		foreach($route['input_schema'] as $field => $meta) {
+			//is public?
+			if($public) {
+				unset($meta['rules'], $meta['filters']);
+				$route['input_schema'][$field] = $meta;
 			}
-			//get path
-			$path = trim($route['path'], '/');
-			unset($route['path']);
-			//add to array
-			$result['endpoints'][$path] = $route;
+		}
+		//set url?
+		if(!isset($route['url'])) {
+			$route['url'] = $this->getUrl($route['path']);
 		}
 		//return
-		return $result;
+		return $route;
 	}
 
 	protected function addData($key, $val) {
@@ -267,6 +221,106 @@ class Api {
 
 	protected function addError($key, $val) {
 		$this->errors[$key] = $val;
+	}
+
+	protected function formatPath($path, $withPrefix = true) {
+		//set vars
+		$path = trim($path, '/');
+		$prefix = trim($this->basePath, '/');
+		//add previx?
+		if($prefix && strpos($path, $prefix) !== 0) {
+			$path = $prefix . ($path ? '/' . $path : '');
+		}
+		//remove prefix?
+		if(!$withPrefix && $prefix && $path) {
+			$path = substr($path, strlen($prefix));
+			$path = trim($path, '/');
+		}
+		//return
+		return $path;
+	}
+
+	protected function formatRoute($route) {
+		//set vars
+		$ctx = $this;
+		$isDescribe = isset($_GET['describe']);
+		//is array?
+		if(is_array($route)) {
+			//set array defaults
+			$route = array_merge([
+				'path' => '',
+				'methods' => [],
+				'callback' => null,
+				'auth' => null,
+				'hide' => false,
+			], $route);
+		} else if(is_string($route)) {
+			//create object
+			$route = new $route;
+		}
+		//format path
+		$route['path'] = $this->formatPath($route['path']);
+		//add dev methods?
+		if($this->devMethods && $route['methods'] && $this->kernel->isEnv('dev')) {
+			$route['methods'] = array_unique(array_merge($route['methods'], $this->devMethods));
+		}
+		//replace $this?
+		if($route['callback'] && is_array($route['callback'])) {
+			if($route['callback'][0] === '$this') {
+				$route['callback'][0] = $this;
+			}
+		}
+		//bind callback to $this
+		$cb = $this->kernel->bind($route['callback'], $this);
+		//wrap callback
+		$route['callback'] = function() use($cb, $ctx) {
+			//buffer
+			ob_start();
+			//execute callback
+			$res = call_user_func($cb);
+			//display response?
+			if($echo = ob_get_clean()) {
+				echo $echo;
+				return;
+			}
+			//valid response?
+			if(!is_array($res)) {
+				throw new \Exception("API endpoint route must return an array");
+			}
+			//respond
+			return $ctx->respond($res);
+		};
+		//format auth?
+		if($route['auth'] === true) {
+			$route['auth'] = [ $this, 'auth' ];
+		} else if($route['auth'] && !is_callable($route['auth'])) {
+			$route['auth'] = [ $this, $route['auth'] ];
+		}	
+		//cache using path
+		$this->routes[$route['path']] = $route;
+		//add route?
+		if($r = (array) $route) {
+			//describe API endpoint?
+			if($isDescribe && !$route['hide']) {
+				//reset vars
+				$r['auth'] = false;
+				$r['methods'] = [ 'GET' ];
+				//wrap describe method
+				$r['callback'] = function() use($ctx, $route) {
+					//get data
+					$data = $ctx->describe($route['path'], true);
+					//return
+					return $ctx->respond([
+						'code' => $data ? 200 : 404,
+						'data' => $data,
+					]);
+				};
+			}
+			//add route
+			$this->kernel->route($r);
+		}
+		//return
+		return $route;
 	}
 
 	protected function formatResponse(array $response) {

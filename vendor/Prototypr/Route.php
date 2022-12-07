@@ -39,6 +39,7 @@ class Route implements \ArrayAccess {
 
 	public function describe() {
 		return [
+			'url' => $this->kernel->api->getUrl($this->path),
 			'path' => $this->path,
 			'methods' => $this->methods,
 			'auth' => !!$this->auth,

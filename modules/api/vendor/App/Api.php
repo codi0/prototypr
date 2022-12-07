@@ -7,7 +7,6 @@ class Api extends \Prototypr\Api {
 	protected $basePath = '/api/';
 	
 	protected $routes = [
-		'App\Api\V1\Home',
 		'App\Api\V1\Check',
 		'App\Api\V1\Report',
 	];

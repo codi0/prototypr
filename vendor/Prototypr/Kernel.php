@@ -1064,8 +1064,11 @@ namespace Prototypr {
 				//set response message?
 				if($checkMsg && isset($this->httpMessages[$code])) {
 					if(!isset($data['message']) || !$data['message']) {
-						$data['message'] = $this->httpMessages[$code];
-						ksort($data);
+						$keys = array_keys($data);
+						$index = array_search('code', $keys, true);
+						$pos = ($index === false) ? count($data) : $index + 1;
+						$msg = [ 'message' => $this->httpMessages[$code] ];
+						$data = array_merge(array_slice($data, 0, $pos), $msg, array_slice($data, $pos));
 					}
 				}
 			}
