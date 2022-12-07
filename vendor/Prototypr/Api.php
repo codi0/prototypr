@@ -8,7 +8,6 @@ class Api {
 
 	protected $data = [];
 	protected $errors = [];
-	protected $devMethods = [];
 
 	protected $basePath = '/';
 	protected $jsonReqBody = '';
@@ -22,21 +21,21 @@ class Api {
 			'methods' => [],
 			'callback' => [ '$this', 'home' ],
 			'auth' => false,
-			'hide' => true,
+			'public' => false,
 		],
 		[
 			'path' => '401',
 			'methods' => [],
 			'callback' => [ '$this', 'unauthorized' ],
 			'auth' => false,
-			'hide' => true,
+			'public' => false,
 		],
 		[
 			'path' => '404',
 			'methods' => [],
 			'callback' => [ '$this', 'notfound' ],
 			'auth' => false,
-			'hide' => true,
+			'public' => false,
 		],
 	];
 
@@ -93,7 +92,7 @@ class Api {
 		//loop through routes
 		foreach($this->routes as $route) {
 			//skip display?
-			if($route['hide']) {
+			if(!$route['public']) {
 				continue;
 			}
 			//add endpoint?
@@ -170,14 +169,14 @@ class Api {
 		//actions
 		$actions = [
 			'auth' => 'bool',
-			'hide' => 'bool',
+			'public' => 'bool',
 			'input_schema' => 'array',
 			'output_schema' => 'array',
 			'callback' => 'unset',
 		];
 		//is public?
 		if($public) {
-			$actions['hide'] = 'unset';
+			$actions['public'] = 'unset';
 		}
 		//is object?
 		if(is_object($route)) {
@@ -242,22 +241,31 @@ class Api {
 				'methods' => [],
 				'callback' => null,
 				'auth' => null,
-				'hide' => false,
+				'public' => true,
 			], $route);
 		} else if(is_string($route)) {
 			//create object
 			$route = new $route;
 		}
+		//replace hide?
+		if(isset($route['hide'])) {
+			$route['public'] = !$route['hide'];
+			unset($route['hide']);
+		}
 		//format path
 		$route['path'] = $this->getPath($route['path'], false);
-		//add dev methods?
-		if($this->devMethods && $route['methods'] && $this->kernel->isEnv('dev')) {
-			$route['methods'] = array_unique(array_merge($route['methods'], $this->devMethods));
-		}
-		//replace $this?
-		if($route['callback'] && is_array($route['callback'])) {
-			if($route['callback'][0] === '$this') {
-				$route['callback'][0] = $this;
+		//replace object strings
+		foreach([ 'callback', 'auth' ] as $k) {
+			//try replacing?
+			if($route[$k] && is_array($route[$k])) {
+				//replace $this?
+				if($route[$k][0] === '$this') {
+					$route[$k][0] = $this;
+				}
+				//replace $kernel?
+				if($route[$k][0] === '$kernel') {
+					$route[$k][0] = $this->kernel;
+				}
 			}
 		}
 		//bind callback to $this
@@ -293,7 +301,7 @@ class Api {
 			//full path
 			$r['path'] = $this->getPath($route['path'], true);
 			//describe API endpoint?
-			if($isDescribe && !$route['hide']) {
+			if($isDescribe && $route['public']) {
 				//reset vars
 				$r['auth'] = false;
 				$r['methods'] = [ 'GET' ];

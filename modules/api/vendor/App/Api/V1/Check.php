@@ -7,23 +7,27 @@ class Check extends \Prototypr\Route {
 	public $path = 'v1/check';
 	public $methods = [ 'GET' ];
 	public $auth = false;
-	public $hide = false;
+	public $public = true;
 
 	protected $inputSchema = [
 		'title' => [
 			'desc' => 'The title to check',
+			'contexts' => [
+				'GET' => 'required',
+			],
 			'source' => 'GET',
 			'type' => 'string',
-			'required' => true,
 			'default' => null,
 			'rules' => [],
 			'filters' => [],
 		],
 		'url' => [
 			'desc' => 'The url to check',
+			'contexts' => [
+				'GET' => 'optional',
+			],
 			'source' => 'GET',
-			'type' => 'string',
-			'required' => false,
+			'type' => 'string.url',
 			'default' => null,
 			'rules' => [ 'url' ],
 			'filters' => [],
