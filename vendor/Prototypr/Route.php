@@ -122,6 +122,7 @@ class Route implements \ArrayAccess {
 		foreach($this->inputSchema as $field => $meta) {
 			//format meta
 			$this->inputSchema[$field] = array_merge([
+				'label' => ucfirst(str_replace('_', ' ', $field)),
 				'desc' => '',
 				'source' => 'REQUEST',
 				'type' => 'string',

@@ -87,27 +87,17 @@ class Api {
 		throw new \Exception("Define an inherited auth method, to use API authentication");
 	}
 
-	public function home($prefix='') {
+	public function home() {
 		//set vars
 		$endpoints = [];
-		$prefix = $this->formatPath($prefix ?: '');
 		//loop through routes
 		foreach($this->routes as $route) {
-			//set vars
-			$path = $route['path'];
 			//skip display?
 			if($route['hide']) {
 				continue;
 			}
-			//has prefix?
-			if($prefix && stripos($path, $prefix) !== 0) {
-				continue;
-			}
-			//format path
-			$path = substr($path, strlen($prefix));
-			$path = trim($path, '/');
 			//add endpoint?
-			if(!empty($path)) {
+			if($path = $this->getPath($route['path'], true)) {
 				$endpoints[$path] = $route['methods'];
 			}
 		}
@@ -134,8 +124,25 @@ class Api {
 		];
 	}
 
+	public function getPath($path, $withBase = true) {
+		//set vars
+		$path = trim($path, '/');
+		$base = trim($this->basePath, '/');
+		//add base path?
+		if($base && strpos($path, $base) !== 0) {
+			$path = $base . ($path ? '/' . $path : '');
+		}
+		//remove base path?
+		if(!$withBase && $base && $path) {
+			$path = substr($path, strlen($base));
+			$path = trim($path, '/');
+		}
+		//return
+		return $path ?: '/';
+	}
+
 	public function getUrl($path) {
-		return rtrim($this->kernel->config('base_url'), '/') . '/' . $this->formatPath($path);
+		return rtrim($this->kernel->config('base_url'), '/') . '/' . $this->getPath($path);
 	}
 
 	public function addEndpoint($path, $callback=null, array $route=[]) {
@@ -153,7 +160,7 @@ class Api {
 
 	public function describe($path, $public = false) {
 		//format path
-		$path = $this->formatPath($path);
+		$path = $this->getPath($path, false);
 		//route exists?
 		if(!isset($this->routes[$path])) {
 			return [];
@@ -223,23 +230,6 @@ class Api {
 		$this->errors[$key] = $val;
 	}
 
-	protected function formatPath($path, $withPrefix = true) {
-		//set vars
-		$path = trim($path, '/');
-		$prefix = trim($this->basePath, '/');
-		//add previx?
-		if($prefix && strpos($path, $prefix) !== 0) {
-			$path = $prefix . ($path ? '/' . $path : '');
-		}
-		//remove prefix?
-		if(!$withPrefix && $prefix && $path) {
-			$path = substr($path, strlen($prefix));
-			$path = trim($path, '/');
-		}
-		//return
-		return $path;
-	}
-
 	protected function formatRoute($route) {
 		//set vars
 		$ctx = $this;
@@ -259,7 +249,7 @@ class Api {
 			$route = new $route;
 		}
 		//format path
-		$route['path'] = $this->formatPath($route['path']);
+		$route['path'] = $this->getPath($route['path'], false);
 		//add dev methods?
 		if($this->devMethods && $route['methods'] && $this->kernel->isEnv('dev')) {
 			$route['methods'] = array_unique(array_merge($route['methods'], $this->devMethods));
@@ -300,6 +290,8 @@ class Api {
 		$this->routes[$route['path']] = $route;
 		//add route?
 		if($r = (array) $route) {
+			//full path
+			$r['path'] = $this->getPath($route['path'], true);
 			//describe API endpoint?
 			if($isDescribe && !$route['hide']) {
 				//reset vars
