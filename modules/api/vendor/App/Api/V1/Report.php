@@ -12,25 +12,35 @@ class Report extends \Prototypr\Route {
 	protected $inputSchema = [
 		'title' => [
 			'desc' => 'The title of the report',
-			'contexts' => [
-				'POST' => 'required',
-				'PUT' => 'required',
-			],
-			'source' => 'POST',
 			'type' => 'string',
 			'default' => null,
+			'contexts' => [
+				'POST' => [
+					'required' => true,
+					'source' => 'body',
+				],
+				'PUT' => [
+					'required' => true,
+					'source' => 'body',
+				],
+			],
 			'rules' => [],
 			'filters' => [],
 		],
 		'url' => [
 			'desc' => 'The url to report',
-			'contexts' => [
-				'POST' => 'optional',
-				'PUT' => 'optional',
-			],
-			'source' => 'POST',
 			'type' => 'string.url',
 			'default' => null,
+			'contexts' => [
+				'POST' => [
+					'required' => false,
+					'source' => 'body',
+				],
+				'PUT' => [
+					'required' => false,
+					'source' => 'body',
+				],
+			],
 			'rules' => [ 'url' ],
 			'filters' => [],
 		],

@@ -7,7 +7,7 @@ class Route implements \ArrayAccess {
 	use ConstructTrait;
 
 	public $path = '';
-	public $methods = [];
+	public $methods = [ 'GET' ];
 	public $callback = null;
 	public $params = [];
 
@@ -18,6 +18,7 @@ class Route implements \ArrayAccess {
 	protected $outputSchema = [];
 
 	protected $errors = [];
+	protected $restMethods = [ 'GET', 'POST', 'PUT', 'DELETE' ];
 
 	#[\ReturnTypeWillChange]
 	public function offsetExists($offset) {
@@ -66,9 +67,9 @@ class Route implements \ArrayAccess {
 			}
 			//input vars
 			$errors = [];
-			$source = '_' . strtoupper($meta['source']);
+			$context = $meta['contexts'][$method];
+			$source = '_' . $this->mapSource($context['source']);
 			$value = isset($GLOBALS[$source][$field]) ? $GLOBALS[$source][$field] : null;
-			$isRequired = ($meta['contexts'][$method] === 'required') || ($meta['contexts'][$method] === true);
 			//translate value?
 			if($value === 'true') $value = true;
 			if($value === 'false') $value = false;
@@ -76,7 +77,7 @@ class Route implements \ArrayAccess {
 			//cache value
 			$input[$field] = $value;
 			//required field?
-			if($isRequired && !in_array('required', $meta['rules'])) {
+			if($context['required'] && !in_array('required', $meta['rules'])) {
 				$meta['rules'][] = 'required';
 			}
 			//process custom rules
@@ -127,11 +128,15 @@ class Route implements \ArrayAccess {
 
 	protected function onConstruct(array $opts) {
 		//set vars
-		$contexts = [];
+		$defContexts = [];
 		$this->callback = [ $this, 'doCallback' ];
+		$this->methods = array_map('strtoupper', $this->methods);
 		//set default contexts
 		foreach($this->methods as $m) {
-			$contexts[$m] = 'optional';
+			$defContexts[$m] = [
+				'required' => false,
+				'source' => in_array($m, [ 'GET', 'DELETE' ]) ? 'url' : 'body',
+			];
 		}
 		//loop through input schema
 		foreach($this->inputSchema as $field => $meta) {
@@ -139,13 +144,23 @@ class Route implements \ArrayAccess {
 			$this->inputSchema[$field] = array_merge([
 				'label' => ucfirst(str_replace('_', ' ', $field)),
 				'desc' => '',
-				'contexts' => $contexts,
-				'source' => 'REQUEST',
 				'type' => 'string',
 				'default' => null,
+				'contexts' => $defContexts,
 				'rules' => [],
 				'filters' => [],
 			], $meta);
+			//check contexts
+			foreach($this->inputSchema[$field]['contexts'] as $method => $context) {
+				//valid method?
+				if(!in_array($method, $this->restMethods)) {
+					throw new \Exception("Input scheme context must be one of " . implode(', ', $this->restMethods));
+				}
+				//valid context?
+				if(!isset($context['required']) || !isset($context['source'])) {
+					throw new \Exception("Input scheme context must contain 'required' and 'source' parameters");
+				}
+			}
 		}
 	}
 
@@ -168,6 +183,19 @@ class Route implements \ArrayAccess {
 		}
 		//add error message
 		$this->errors[$field][] = $message;
+	}
+
+	protected function mapSource($source) {
+		//is url?
+		if($source === 'url') {
+			return 'GET';
+		}
+		//is body?
+		if($source === 'body') {
+			return 'POST';
+		}
+		//default
+		return strtoupper($source);
 	}
 
 }

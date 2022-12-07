@@ -12,23 +12,27 @@ class Check extends \Prototypr\Route {
 	protected $inputSchema = [
 		'title' => [
 			'desc' => 'The title to check',
-			'contexts' => [
-				'GET' => 'required',
-			],
-			'source' => 'GET',
 			'type' => 'string',
 			'default' => null,
+			'contexts' => [
+				'GET' => [
+					'required' => true,
+					'source' => 'url',
+				],
+			],
 			'rules' => [],
 			'filters' => [],
 		],
 		'url' => [
 			'desc' => 'The url to check',
-			'contexts' => [
-				'GET' => 'optional',
-			],
-			'source' => 'GET',
 			'type' => 'string.url',
 			'default' => null,
+			'contexts' => [
+				'GET' => [
+					'required' => false,
+					'source' => 'url',
+				],
+			],
 			'rules' => [ 'url' ],
 			'filters' => [],
 		],
