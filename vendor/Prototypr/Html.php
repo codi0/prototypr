@@ -6,6 +6,17 @@ class Html {
 
 	use ConstructTrait;
 
+	public function __call($method, array $args) {
+		//set vars
+		$name = isset($args[0]) ? $args[0] : '';
+		$value = isset($args[1]) ? $args[1] : '';
+		$opts = isset($args[2]) ? $args[2] : [];
+		//set input type
+		$args['type'] = $method;
+		//return
+		return $this->input($name, $value, $opts);
+	}
+
 	public function input($name, $value='', array $opts=[]) {
 		//set opts
 		$opts = array_merge([
@@ -15,14 +26,6 @@ class Html {
 		], $opts);
 		//return
 		return '<input' . $this->formatAttr($opts) . '>';
-	}
-
-	public function text($name, $value='', array $opts=[]) {
-		return $this->input($name, $value, array_merge([ 'type' => 'text' ], $opts));
-	}
-
-	public function hidden($name, $value='', array $opts=[]) {
-		return $this->input($name, $value, array_merge([ 'type' => 'hidden' ], $opts));
 	}
 
 	public function password($name, $value='', array $opts=[]) {
@@ -41,18 +44,6 @@ class Html {
 		}
 		//return
 		return $html;
-	}
-
-	public function file($name, $value='', array $opts=[]) {
-		return $this->input($name, $value, array_merge([ 'type' => 'file' ], $opts));
-	}
-
-	public function button($name, $value='', array $opts=[]) {
-		return $this->input($name, $value, array_merge([ 'type' => 'button' ], $opts));
-	}
-
-	public function submit($name, $value='', array $opts=[]) {
-		return $this->input($name, $value, array_merge([ 'type' => 'submit' ], $opts));
 	}
 
 	public function textarea($name, $value='', array $opts=[]) {
@@ -296,8 +287,12 @@ class Html {
 		$html = '';
 		//loop through attr
 		foreach($opts as $k => $v) {
-			if($k && $v && is_scalar($v)) {
-				$html .= ' ' . $k . '="' . $v . '"';
+			if($k && $v) {
+				if(is_string($v) || is_numeric($v)) {
+					$html .= ' ' . $k . '="' . $v . '"';
+				} else {
+					$html .= ' ' . $k;
+				}
 			}
 		}
 		//return

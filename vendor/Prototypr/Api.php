@@ -157,7 +157,7 @@ class Api {
 		return $this->formatRoute($route);
 	}
 
-	public function describe($path, $public = false) {
+	public function describe($path, $method = null, $public = false) {
 		//format path
 		$path = $this->getPath($path, false);
 		//route exists?
@@ -180,7 +180,11 @@ class Api {
 		}
 		//is object?
 		if(is_object($route)) {
-			$route = $route->describe();
+			$route = $route->describe($method);
+		}
+		//empty route?
+		if(empty($route)) {
+			return [];
 		}
 		//loop through actions
 		foreach($actions as $key => $action) {
@@ -308,7 +312,7 @@ class Api {
 				//wrap describe method
 				$r['callback'] = function() use($ctx, $route) {
 					//get data
-					$data = $ctx->describe($route['path'], true);
+					$data = $ctx->describe($route['path'], $_GET['describe'], true);
 					//return
 					return $ctx->respond([
 						'code' => $data ? 200 : 404,

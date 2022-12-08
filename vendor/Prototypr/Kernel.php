@@ -39,14 +39,18 @@ namespace Prototypr {
 		];
 
 		public final static function factory($opts=[]) {
+			//cache last instance
+			static $last = 'default';
 			//format opts?
 			if(!is_array($opts)) {
 				$opts = [ 'instance' => $opts ];
 			}
 			//set instance property?
 			if(!isset($opts['instance']) || !$opts['instance']) {
-				$opts['instance'] = 'default';
+				$opts['instance'] = $last;
 			}
+			//update last instance
+			$last = $opts['instance'];
 			//create instance?
 			if(!isset(self::$_instances[$opts['instance']])) {
 				new \Prototypr\Kernel($opts);

@@ -7,8 +7,7 @@ class Api extends \Prototypr\Api {
 	protected $basePath = '/api/';
 	
 	protected $routes = [
-		'App\Api\V1\Check',
-		'App\Api\V1\Report',
+		'App\Api\V1\Todos',
 	];
 
 	public function getKeyHeader() {

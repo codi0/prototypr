@@ -100,8 +100,8 @@ class Validator {
 	}
 
 	protected function ruleRequired($value) {
-		if($value === null || $value === '') {
-			return ':label is required';
+		if($value === null || $value === '' || $value == 0) {
+			return ':label required';
 		}
 	}
 
@@ -139,6 +139,17 @@ class Validator {
 		return preg_replace($pattern, '', $value);
 	}
 
+	protected function ruleString($value) {
+		//validation failed?
+		if(!is_string($value)) {
+			return ':label must be a string'; 
+		}
+	}
+
+	protected function filterString($value) {
+		return (string) ($value ?: '');
+	}
+
 	protected function ruleInt($value) {
 		//validation failed?
 		if($value && ((string) $value !== (string) intval($value))) {
@@ -148,6 +159,14 @@ class Validator {
 
 	protected function filterInt($value) {
 		return intval($value);
+	}
+
+	protected function ruleInteger($value) {
+		return $this->ruleInt($value);
+	}
+
+	protected function filterInteger($value) {
+		return $this->filterInt($value);
 	}
 
 	protected function ruleId($value) {
@@ -206,6 +225,28 @@ class Validator {
 		return preg_replace('/[^a-f0-9\-]/i', '', $value);
 	}
 
+	protected function ruleArray($value) {
+		//validation failed?
+		if($value !== (array) $value) {
+			return ':label must be an array'; 
+		}
+	}
+
+	protected function filterArray($value) {
+		return (array) ($value ?: []);
+	}
+
+	protected function ruleObject($value) {
+		//validation failed?
+		if($value !== (object) $value) {
+			return ':label must be an object'; 
+		}
+	}
+
+	protected function filterObject($value) {
+		return (object) $value;
+	}
+
 	protected function ruleBool($value) {
 		//validation failed?
 		if($value && ($value !== (bool) $value)) {
@@ -215,6 +256,14 @@ class Validator {
 
 	protected function filterBool($value) {
 		return !!$value;
+	}
+
+	protected function ruleBoolean($value) {
+		return $this->ruleBool($value);
+	}
+
+	protected function filterBoolean($value) {
+		return $this->filterBool($value);
 	}
 
 	protected function ruleNull($value) {

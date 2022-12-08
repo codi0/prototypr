@@ -10,6 +10,7 @@ class Form {
 	protected $attr = [];
 	protected $fields = [];
 	protected $values = [];
+	protected $inline = [];
 
 	protected $model = [];
 	protected $errors = [];
@@ -50,7 +51,100 @@ class Form {
 		return self::$instances[$name];
 	}
 
+	public static function fromApi($url, $method, $name = null) {
+		//set vars
+		$js = '';
+		$kernel = prototypr();
+		$method = strtoupper($method);
+		$json = $kernel->http($url . '?describe=' . $method);
+		//valid json response?
+		if(!$json || !is_array($json) || !isset($json['data'])) {
+			throw new \Exception('API endpoint description not found');
+		}
+		//get description data
+		$data = $json['data'];
+		//valid method?
+		if(!in_array($method, $data['methods'])) {
+			throw new \Exception('API endpoint does not accept ' . $method . ' request method');
+		}
+		//get form name
+		$pathArr = explode('/', $data['path']);
+		$name = $name ?: array_pop($pathArr);
+		//create form
+		$form = self::factory($name, $method, $url);
+		//add form fields
+		foreach($data['input_schema'] as $field => $meta) {
+			//set defaults
+			$opts = [
+				'label' => '',
+				'desc' => '',
+				'type' => '',
+				'default' => null,
+				'required' => false,
+				'options' => [],
+			];
+			//hydrate opts
+			foreach($opts as $k => $v) {
+				//has option?
+				if(isset($meta[$k])) {
+					$opts[$k] = $meta[$k];
+				}
+			}
+			//format type
+			$opts['type'] = explode('.', $opts['type']);
+			$opts['type'] = isset($opts['type'][1]) ? $opts['type'][1] : $opts['type'][0];
+			//translate type?
+			switch($opts['type']) {
+				case 'integer':
+				case 'boolean':
+					$opts['type'] = 'number';
+					break;
+				case 'string':
+					$opts['type'] = 'text';
+					break;
+			}
+			//add input field
+			$form->input($field, $opts);
+		}
+		//add submit
+		$form->submit('Save');
+		//create js
+$js = '(function(url, method, id) {
+	var form = document.getElementById(id);
+	form.addEventListener("submit", function(e) {
+		e.preventDefault();
+		var body = "";
+		var formData = new FormData(this);
+		var formDataStr = (new URLSearchParams(formData)).toString();
+		if(method === "POST" || method === "PUT") {
+			body = formDataStr;
+		} else {
+			url = url + "?" + formDataStr;
+		}
+		fetch(url, {
+			method: method,
+			body: body,
+			headers: {
+				"Content-Type": "application/x-www-form-urlencoded"
+			}
+		}).then(function(response) {
+			return response.json();
+		}).then(function(data) {
+			console.log(data);
+		});
+	});
+})("' . $url . '", "' . $method . '", "' . $form->attr['id'] . '");';
+		//add js
+		$form->inline('script', $js);
+		//return
+		return $form;
+	}
+
 	protected function onConstruct(array $opts) {
+		//set default method?
+		if(!isset($this->attr['method'])) {
+			$this->attr['method'] = 'post';
+		}
 		//set default message?
 		if(!$this->message && $this->attr['method'] === 'post') {
 			$this->message = 'Form successfully saved';
@@ -61,12 +155,22 @@ class Form {
 		return $this->render();
 	}
 
+	public function __call($method, array $args) {
+		//set args
+		$name = isset($args[0]) ? $args[0] : '';
+		$config = isset($args[1]) ? $args[1] : [];
+		//set config type
+		$config['type'] = $method;
+		//return
+		return $this->input($name, $config);
+	}
+
 	public function name($name=null) {
 		//set name?
 		if(!empty($name)) {
 			$this->name = $name;
 			$this->attr['name'] = $name;
-			$thi->attr['id'] = $name . '-form';
+			$this->attr['id'] = $name . '-form';
 			return $this;
 		}
 		//return
@@ -94,60 +198,49 @@ class Form {
 		return $this;
 	}
 
+	public function inline($tag, $code) {
+		//save inline
+		$this->inline[] = [ 'tag' => $tag, 'code' => $code ];
+		//chain it
+		return $this;
+	}
+
 	public function input($name, array $config=[]) {
+		//remove label?
+		if(in_array($config['type'], [ 'hidden', 'submit' ])) {
+			$config['label'] = '';
+		}
 		//add field
 		$this->fields[$name] = $config;
 		//chain it
 		return $this;
 	}
 
-	public function text($name, array $config=[]) {
-		return $this->input($name, array_merge([ 'type' => 'text' ], $config));
-	}
-
-	public function textarea($name, array $config=[]) {
-		return $this->input($name, array_merge([ 'type' => 'textarea' ], $config));
-	}
-
-	public function hidden($name, array $config=[]) {
-		return $this->input($name, array_merge([ 'type' => 'hidden', 'label' => '' ], $config));
-	}
-
-	public function password($name, array $config=[]) {
-		return $this->input($name, array_merge([ 'type' => 'password' ], $config));
-	}
-
-	public function file($name, array $config=[]) {
-		return $this->input($name, array_merge([ 'type' => 'file' ], $config));
-	}
-
-	public function select($name, array $config=[]) {
-		return $this->input($name, array_merge([ 'type' => 'select' ], $config));
-	}
-
-	public function checkbox($name, array $config=[]) {
-		return $this->input($name, array_merge([ 'type' => 'checkbox' ], $config));
-	}
-
-	public function radio($name, array $config=[]) {
-		return $this->input($name, array_merge([ 'type' => 'radio' ], $config));
-	}
-
-	public function button($name, array $config=[]) {
-		return $this->input($name, array_merge([ 'type' => 'button' ], $config));
-	}
-
 	public function captcha($label, array $config=[]) {
-		return $this->input('captcha', array_merge([ 'type' => 'captcha', 'label' => $label, 'validate' => 'captcha' ], $config));
+		//set config
+		$config['type'] = 'captcha';
+		$config['label'] = $label;
+		$config['validate'] = 'captcha';
+		//return
+		return $this->input('captcha', $config);
 	}
 
 	public function submit($value, array $config=[]) {
-		return $this->input('submit', array_merge([ 'type' => 'submit', 'value' => $value, 'label' => '' ], $config));
+		//set config
+		$config['type'] = 'submit';
+		$config['value'] = $value;
+		//return
+		return $this->input('submit', $config);
 	}
 
 	public function html($html, array $config=[]) {
+		//generate name
 		$name = mt_rand(10000, 100000);
-		return $this->input($name, array_merge([ 'label' => '', 'html' => $html ], $config));
+		//set config
+		$config['label'] = '';
+		$config['html'] = $html;
+		//return
+		return $this->input($name, $config);
 	}
 
 	public function isValid() {
@@ -422,10 +515,18 @@ class Form {
 			}
 		}
 		//close form
-		$html .= '</form>';
+		$html .= '</form>' . "\n";
 		//go to form?
 		if($this->errors && $this->attr['method'] === 'post') {
-			$html .= "<script>document.getElementById('" . $this->name . "-form').scrollIntoView();</script>";
+			$html .= '<script>' . "\n";
+			$html .= 'document.getElementById("' . $this->name . '-form").scrollIntoView();' . "\n";
+			$html .- '</script>' . "\n";
+		}
+		//add inline scripts?
+		foreach($this->inline as $inline) {
+			$html .= "<" . $inline['tag'] . ">" . "\n";
+			$html .= $inline['code'] . "\n";
+			$html .= "</" . $inline['tag'] . ">" . "\n";
 		}
 		//return
 		return $html;

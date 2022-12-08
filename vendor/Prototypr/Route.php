@@ -16,8 +16,9 @@ class Route implements \ArrayAccess {
 
 	protected $inputSchema = [];
 	protected $outputSchema = [];
-
 	protected $errors = [];
+
+	protected $reqMethod = 'GET';
 	protected $restMethods = [ 'GET', 'POST', 'PUT', 'DELETE' ];
 
 	#[\ReturnTypeWillChange]
@@ -40,15 +41,39 @@ class Route implements \ArrayAccess {
 		$this->$offset = null;
 	}
 
-	public function describe() {
+	public function describe($method = null) {
+		//set vars
+		$input = $this->inputSchema;
+		$output = $this->outputSchema;
+		$method = strtoupper($method ?: '');
+		//filter by method?
+		if(!empty($method)) {
+			//valid method?
+			if(!in_array($method, $this->methods)) {
+				return [];
+			}
+			//loop through input
+			foreach($input as $field => $meta) {
+				//remove field?
+				if(!isset($meta['contexts'][$method])) {
+					unset($input[$field]);
+					continue;
+				}
+				//add to top level
+				$input[$field] = array_merge($input[$field], $input[$field]['contexts'][$method]);
+				//remove contexts
+				unset($input[$field]['contexts']);
+			}
+		}
+		//return
 		return [
 			'url' => $this->kernel->api->getUrl($this->path),
 			'path' => $this->path,
 			'methods' => $this->methods,
 			'auth' => !!$this->auth,
 			'public' => !!$this->public,
-			'input_schema' => $this->inputSchema,
-			'output_schema' => $this->outputSchema,
+			'input_schema' => $input,
+			'output_schema' => $output,
 		];
 	}
 
@@ -56,29 +81,31 @@ class Route implements \ArrayAccess {
 		//set vars
 		$input = [];
 		$output = [ 'code' => 200, 'errors' => [], 'data' => null ];
-		$method = isset($_SERVER['REQUEST_METHOD']) ? $_SERVER['REQUEST_METHOD'] : 'GET';
-		//reset errors
+		//set properties
 		$this->errors = [];
+		$this->reqMethod = isset($_SERVER['REQUEST_METHOD']) ? $_SERVER['REQUEST_METHOD'] : 'GET';
 		//loop through input schema
 		foreach($this->inputSchema as $field => $meta) {
 			//valid context?
-			if(!isset($meta['contexts'][$method])) {
+			if(!isset($meta['contexts'][$this->reqMethod])) {
 				continue;
 			}
 			//input vars
 			$errors = [];
-			$context = $meta['contexts'][$method];
+			$type = explode('.', $meta['type'])[0];
+			$context = $meta['contexts'][$this->reqMethod];
 			$source = '_' . $this->mapSource($context['source']);
-			$value = isset($GLOBALS[$source][$field]) ? $GLOBALS[$source][$field] : null;
+			$value = isset($GLOBALS[$source][$field]) ? $GLOBALS[$source][$field] : $context['default'];
 			//translate value?
 			if($value === 'true') $value = true;
 			if($value === 'false') $value = false;
-			if($value === 'null') $value = null;
-			//cache value
-			$input[$field] = $value;
-			//required field?
+			//set required rule?
 			if($context['required'] && !in_array('required', $meta['rules'])) {
 				$meta['rules'][] = 'required';
+			}
+			//set type rule?
+			if($type && !in_array($type, $meta['rules']) && $value !== null) {
+				$meta['rules'][] = $type;
 			}
 			//process custom rules
 			foreach($meta['rules'] as $rule) {
@@ -87,6 +114,10 @@ class Route implements \ArrayAccess {
 			//process validation errors
 			foreach($this->kernel->validator->errors() as $error) {
 				$this->addError($field, $error);
+			}
+			//cache value?
+			if($value !== null) {
+				$input[$field] = $value;
 			}
 		}
 		//validate hook
@@ -99,10 +130,6 @@ class Route implements \ArrayAccess {
 		} else {
 			//filter input
 			foreach($input as $field => $value) {
-				//set default?
-				if($value === null || $value === '') {
-					$value = $meta['default'];
-				}
 				//process custom filters
 				foreach($meta['filters'] as $filter) {
 					$value = $this->kernel->validator->filter($filter, $value);
@@ -111,8 +138,14 @@ class Route implements \ArrayAccess {
 				$input[$field] = $this->onFilter($field, $value);
 			}
 			try {
+				//get method
+				$doMethod = 'do' . ucfirst(strtolower($this->reqMethod));
+				//method exists?
+				if(!method_exists($this, $doMethod)) {
+					$doMethod = 'doRoute';
+				}
 				//execute route
-				$tmp = $this->doRoute($input, $output);
+				$tmp = $this->$doMethod($input, $output);
 				//update output?
 				if($tmp !== null) {
 					$output = $tmp;
@@ -145,7 +178,6 @@ class Route implements \ArrayAccess {
 				'label' => ucfirst(str_replace('_', ' ', $field)),
 				'desc' => '',
 				'type' => 'string',
-				'default' => null,
 				'contexts' => $defContexts,
 				'rules' => [],
 				'filters' => [],
@@ -159,6 +191,10 @@ class Route implements \ArrayAccess {
 				//valid context?
 				if(!isset($context['required']) || !isset($context['source'])) {
 					throw new \Exception("Input scheme context must contain 'required' and 'source' parameters");
+				}
+				//set default value?
+				if(!isset($context['default'])) {
+					$this->inputSchema[$field]['contexts'][$method]['default'] = null;
 				}
 			}
 		}
@@ -193,6 +229,10 @@ class Route implements \ArrayAccess {
 		//is body?
 		if($source === 'body') {
 			return 'POST';
+		}
+		//is any?
+		if($source === 'any') {
+			return 'REQUEST';
 		}
 		//default
 		return strtoupper($source);
