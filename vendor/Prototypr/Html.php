@@ -6,6 +6,28 @@ class Html {
 
 	use ConstructTrait;
 
+	public static function formatAttr(array $opts) {
+		//set vars
+		$html = '';
+		//loop through attr
+		foreach($opts as $k => $v) {
+			if($k && $v) {
+				//json encode?
+				if(is_array($v)) {
+					$v = json_encode($v);
+				}
+				//set value?
+				if(is_string($v) || is_numeric($v)) {
+					$html .= ' ' . $k . '="' . htmlentities($v, ENT_QUOTES, 'UTF-8') . '"';
+				} else {
+					$html .= ' ' . $k;
+				}
+			}
+		}
+		//return
+		return $html;
+	}
+
 	public function __call($method, array $args) {
 		//set vars
 		$name = isset($args[0]) ? $args[0] : '';
@@ -25,7 +47,7 @@ class Html {
 			'value' => $value,
 		], $opts);
 		//return
-		return '<input' . $this->formatAttr($opts) . '>';
+		return '<input' . self::formatAttr($opts) . '>';
 	}
 
 	public function password($name, $value='', array $opts=[]) {
@@ -52,7 +74,7 @@ class Html {
 			'name' => $name,
 		], $opts);
 		//return
-		return '<textarea' . $this->formatAttr($opts) . '>' . $value . '</textarea>';
+		return '<textarea' . self::formatAttr($opts) . '>' . $value . '</textarea>';
 	}
 
 	public function checkbox($name, $value='', array $opts=[]) {
@@ -114,7 +136,7 @@ class Html {
 			$value = $value ? $value[0] : '';
 		}
 		//open select
-		$html = '<select' . $this->formatAttr($opts) . '>' . "\n";
+		$html = '<select' . self::formatAttr($opts) . '>' . "\n";
 		//loop through options
 		foreach($opts['options'] as $key => $val) {
 			//standard opt?
@@ -278,23 +300,6 @@ class Html {
 		$html .= '<div class="captcha-image">' . "\n";
 		$html .= '<img src="data:image/' . $opts['format'] . ';base64,' . base64_encode($imgData) . '">' . "\n";
 		$html .= '</div>';
-		//return
-		return $html;
-	}
-
-	protected function formatAttr(array $opts) {
-		//set vars
-		$html = '';
-		//loop through attr
-		foreach($opts as $k => $v) {
-			if($k && $v) {
-				if(is_string($v) || is_numeric($v)) {
-					$html .= ' ' . $k . '="' . $v . '"';
-				} else {
-					$html .= ' ' . $k;
-				}
-			}
-		}
 		//return
 		return $html;
 	}

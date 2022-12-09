@@ -491,6 +491,8 @@ namespace Prototypr {
 			//remove query string?
 			if(!$opts['query']) {
 				$path = explode('?', $path, 2)[0];
+			} elseif(is_array($opts['query'])) {
+				$path .= (strpos($path, '?') !== false ? '&' : '?') . http_build_query($opts['query']);
 			}
 			//is relative url?
 			if($path[0] !== '/' && strpos($path, '://') === false) {
@@ -1304,10 +1306,6 @@ namespace Prototypr {
 		}
 
 		public function form($name, $method='post', $action='') {
-			//class found?
-			if(!$class = $this->class('form')) {
-				return null;
-			}
 			//format opts
 			if(is_array($method)) {
 				$opts = $method;
@@ -1321,8 +1319,19 @@ namespace Prototypr {
 			}
 			//add kernel
 			$opts['kernel'] = $this;
-			//create form
-			return $class::factory($name, $opts);
+			//create form object
+			return HtmlForm::factory($name, $opts);
+		}
+
+		public function table($name, array $opts = []) {
+			//format opts?
+			if($opts && !isset($opts['data'])) {
+				$opts = [ 'data' => $opts ];
+			}
+			//add kernel
+			$opts['kernel'] = $this;
+			//create table object
+			return HtmlTable::factory($name, $opts);
 		}
 
 		public function model($name, $data=[], $find=true) {

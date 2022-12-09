@@ -2,7 +2,7 @@
 
 namespace Prototypr;
 
-class Form {
+class HtmlForm {
 
 	use ConstructTrait;
 
@@ -49,95 +49,6 @@ class Form {
 		}
 		//return
 		return self::$instances[$name];
-	}
-
-	public static function fromApi($url, $method, $name = null) {
-		//set vars
-		$js = '';
-		$kernel = prototypr();
-		$method = strtoupper($method);
-		$json = $kernel->http($url . '?describe=' . $method);
-		//valid json response?
-		if(!$json || !is_array($json) || !isset($json['data'])) {
-			throw new \Exception('API endpoint description not found');
-		}
-		//get description data
-		$data = $json['data'];
-		//valid method?
-		if(!in_array($method, $data['methods'])) {
-			throw new \Exception('API endpoint does not accept ' . $method . ' request method');
-		}
-		//get form name
-		$pathArr = explode('/', $data['path']);
-		$name = $name ?: array_pop($pathArr);
-		//create form
-		$form = self::factory($name, $method, $url);
-		//add form fields
-		foreach($data['input_schema'] as $field => $meta) {
-			//set defaults
-			$opts = [
-				'label' => '',
-				'desc' => '',
-				'type' => '',
-				'default' => null,
-				'required' => false,
-				'options' => [],
-			];
-			//hydrate opts
-			foreach($opts as $k => $v) {
-				//has option?
-				if(isset($meta[$k])) {
-					$opts[$k] = $meta[$k];
-				}
-			}
-			//format type
-			$opts['type'] = explode('.', $opts['type']);
-			$opts['type'] = isset($opts['type'][1]) ? $opts['type'][1] : $opts['type'][0];
-			//translate type?
-			switch($opts['type']) {
-				case 'integer':
-				case 'boolean':
-					$opts['type'] = 'number';
-					break;
-				case 'string':
-					$opts['type'] = 'text';
-					break;
-			}
-			//add input field
-			$form->input($field, $opts);
-		}
-		//add submit
-		$form->submit('Save');
-		//create js
-$js = '(function(url, method, id) {
-	var form = document.getElementById(id);
-	form.addEventListener("submit", function(e) {
-		e.preventDefault();
-		var body = "";
-		var formData = new FormData(this);
-		var formDataStr = (new URLSearchParams(formData)).toString();
-		if(method === "POST" || method === "PUT") {
-			body = formDataStr;
-		} else {
-			url = url + "?" + formDataStr;
-		}
-		fetch(url, {
-			method: method,
-			body: body,
-			headers: {
-				"Content-Type": "application/x-www-form-urlencoded"
-			}
-		}).then(function(response) {
-			return response.json();
-		}).then(function(data) {
-			console.log(data);
-		});
-	});
-})("' . $url . '", "' . $method . '", "' . $form->attr['id'] . '");';
-		//add js
-		$form->inline('script', $js);
-		//return
-		return $form;
 	}
 
 	protected function onConstruct(array $opts) {
@@ -418,14 +329,8 @@ $js = '(function(url, method, id) {
 		$html = '';
 		$formAttr = [];
 		$modelData = $this->getModelData();
-		//loop through form attributes
-		foreach($this->attr as $k => $v) {
-			if(strlen($v) > 0) {
-				$formAttr[] = $k . '="' . $v . '"';
-			}
-		}
 		//open form
-		$html .= '<form ' . implode(' ', $formAttr) . '>' . "\n";
+		$html .= '<form' . Html::formatAttr($this->attr) . '>' . "\n";
 		//success message?
 		if($this->message) {
 			if($this->isValid || (is_null($this->isValid) && $this->kernel->input('get.success') == 'true')) {
@@ -485,7 +390,7 @@ $js = '(function(url, method, id) {
 				$field .= is_callable($opts['html']) ? call_user_func($opts['html'], $opts) : $opts['html'];
 			} else {
 				$method = $opts['type'];
-				$attr = $this->formatAttr($opts);
+				$attr = $this->formatFieldAttr($opts);
 				$field .= $this->kernel->html->$method($opts['name'], $opts['value'], $attr);
 			}
 			//add html after?
@@ -532,7 +437,7 @@ $js = '(function(url, method, id) {
 		return $html;
 	}
 
-	protected function formatAttr(array $attr) {
+	protected function formatFieldAttr(array $attr) {
 		//attrs to remove
 		$remove = [ 'name', 'value', 'label', 'error', 'validate', 'filter', 'before', 'after', 'override' ];
 		//loop through attributes

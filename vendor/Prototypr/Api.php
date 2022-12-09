@@ -10,7 +10,7 @@ class Api {
 	protected $errors = [];
 
 	protected $basePath = '/';
-	protected $jsonReqBody = '';
+	protected $rawBody = '';
 	protected $hasRun = false;
 
 	protected $routes = [];
@@ -44,15 +44,20 @@ class Api {
 		if(!$this->hasRun) {
 			//update flag
 			$this->hasRun = true;
-			//check body for json
-			if($body = file_get_contents('php://input')) {
-				//attempt decode
-				$decode = json_decode($body, true);
+			//check raw body
+			if($this->rawBody = file_get_contents('php://input')) {
+				//set vars
+				$bodyArr = [];
 				//is json?
-				if(is_array($decode)) {
-					$_POST = $decode;
+				if($json = json_decode($this->rawBody, true)) {
+					$bodyArr = $json;
+				} else if(!$_POST) {
+					parse_str($this->rawBody, $bodyArr);
+				}
+				//update $_POST?
+				if($bodyArr && is_array($bodyArr)) {
+					$_POST = $bodyArr;
 					$_REQUEST = array_merge($_GET, $_POST, $_COOKIE);
-					$this->jsonReqBody = $body;
 				}
 			}
 			//merge base routes

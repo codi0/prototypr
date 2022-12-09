@@ -15,10 +15,16 @@ $this->facade('App', $this);
 //Route: Generate UI from API endpoint
 $this->route('ui', function() {
 	//set vars
+	$object = $this->input('GET.object') ?: 'form';
 	$url = $this->url('api/v1/todos');
 	$method = $this->input('GET.method') ?: 'POST';
-	//generate form
-	echo \Prototypr\Form::fromApi($url, $method);
+	$id = $this->input('GET.id') ?: 0;
+	//generate UI
+	if($object === 'table') {
+		echo $this->apiUi->$object($url);
+	} else {
+		echo $this->apiUi->$object($url, $method, [ 'id' => $id ]);
+	}
 });
 
 
