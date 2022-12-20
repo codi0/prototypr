@@ -113,7 +113,8 @@ class View {
 			}
 			//set default title?
 			if(!isset($data['meta']['title']) || !$data['meta']['title']) {
-				$data['meta']['title'] = str_replace('/', ' > ', ucfirst($data['js']['route']));
+				$route = isset($data['js']['route']) ? $data['js']['route'] : '';
+				$data['meta']['title'] = str_replace('/', ' > ', ucfirst($route));
 			}
 			//use theme?
 			if($themePath) {
