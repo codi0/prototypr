@@ -224,7 +224,7 @@ class HtmlTable {
 					}
 				}
 				//add cell
-				$html .= '<td>' . print_r($cell ?: '', true) . '</td>';
+				$html .= '<td>' . str_replace("\n", "<br>", $this->printCell($cell)) . '</td>';
 			}
 			//close row
 			$html .= '</tr>' . "\n";
@@ -235,6 +235,37 @@ class HtmlTable {
 		$html .= '</table>' . "\n";
 		//return
 		return $html;
+	}
+
+	protected function printCell($input, array $keys=[]) {
+		//is array?
+		if(is_array($input) || is_object($input)) {
+			//set vars
+			$tmp = '';
+			//loop through input
+			foreach($input as $k => $v) {
+				$nKeys = $keys;
+				$nKeys[] = $k;
+				$tmp .= $this->printCell($v, $nKeys) . "\n";
+			}
+			//update input
+			$input = $tmp;
+		} else {
+			//transform vars
+			if($input === true) {
+				$input = 'TRUE';
+			} else if($input === false) {
+				$input = 'FALSE';
+			} else if($input === null) {
+				$input = 'NULL';
+			}
+			//add keys?
+			if($keys) {
+				$input = implode('.', $keys) . ": " . $input;
+			}
+		}
+		//return
+		return trim($input);
 	}
 
 }

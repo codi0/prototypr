@@ -125,6 +125,7 @@ namespace Prototypr {
 				}
 			}
 			//url components
+			$method = (isset($_SERVER['REQUEST_METHOD']) && $_SERVER['REQUEST_METHOD']) ? $_SERVER['REQUEST_METHOD'] : 'GET';
 			$port = (isset($_SERVER['SERVER_PORT']) && $_SERVER['SERVER_PORT']) ? $_SERVER['SERVER_PORT'] : 80;
 			$ssl = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS']) ? ($_SERVER['HTTPS'] !== 'off') : ($port == 443);
 			$domain = isset($_SERVER['HTTP_HOST']) ? $_SERVER['HTTP_HOST'] : '';
@@ -160,11 +161,13 @@ namespace Prototypr {
 				'url' => $host . $_SERVER['REQUEST_URI'],
 				'base_url' => null,
 				'pathinfo' => trim(str_replace(($scriptBase === '/' ? '' : $scriptBase), '', $reqBase), '/'),
+				'method' => $method,
 				'allowed_hosts' => [],
 				//modules
 				'modules' => [],
 				'module_loading' => '',
 				//other
+				'name' => '',
 				'instance' => 'default',
 				'namespace' => null,
 				'version' => null,
@@ -262,7 +265,7 @@ namespace Prototypr {
 				//log server error?
 				if($httpCode < 100 || $httpCode >= 500) {
 					//build error message
-					$errMsg = 'HTTP SERVER ' . $httpCode . ': ' . $this->config('url');
+					$errMsg = 'HTTP SERVER: ' . $httpCode . ' ' . $this->config['method'] . ' ' . $this->config['url'];
 					//app log error
 					$this->log('errors', $errMsg);
 				}
@@ -280,7 +283,7 @@ namespace Prototypr {
 			//default file loader
 			spl_autoload_register($this->bind(function($class) use($formatDir) {
 				//loop through paths
-				foreach($this->config('vendor_dirs') as $path) {
+				foreach($this->config['vendor_dirs'] as $path) {
 					//get file path
 					$path .= '/' . $formatDir($class) . '.php';
 					//file exists?
@@ -405,7 +408,7 @@ namespace Prototypr {
 				return $name;
 			}
 			//check namespaces
-			foreach([ $this->config('namespace'), __NAMESPACE__ ] as $ns) {
+			foreach([ $this->config['namespace'], __NAMESPACE__ ] as $ns) {
 				//skip namespace?
 				if(!$ns) continue;
 				//add namespace
@@ -423,9 +426,9 @@ namespace Prototypr {
 
 		public function path($path='', array $opts=[]) {
 			//set vars
-			$baseDir = $this->config('base_dir');
-			$modulesDir = $this->config('modules_dir');
-			$checkPaths = array_unique(array_merge([ $this->config('theme') ], array_keys($this->config('modules')), [ $baseDir ]));
+			$baseDir = $this->config['base_dir'];
+			$modulesDir = $this->config['modules_dir'];
+			$checkPaths = array_unique(array_merge([ $this->config['theme'] ], array_keys($this->config['modules']), [ $baseDir ]));
 			$checkExts = [ 'tpl' => 'tpl' ];
 			//default opts
 			$opts = array_merge([
@@ -489,7 +492,7 @@ namespace Prototypr {
 			], $opts);
 			//format path
 			$path = $this->path($path, [ 'validate' => false, 'relative' => true ]);
-			$path = trim($path ?: $this->config('url'));
+			$path = trim($path ?: $this->config['url']);
 			//remove query string?
 			if(!$opts['query']) {
 				$path = explode('?', $path, 2)[0];
@@ -503,11 +506,11 @@ namespace Prototypr {
 					return null;
 				}
 				$tmp = $path;
-				$path = $this->config('base_url') . $path;
+				$path = $this->config['base_url'] . $path;
 				//add timestamp?
 				if($opts['time'] && strpos($tmp, '.') !== false) {
 					//get file
-					$file = $this->config('base_dir') . '/' . $tmp;
+					$file = $this->config['base_dir'] . '/' . $tmp;
 					//file exists?
 					if(is_file($file)) {
 						$path .= (strpos($path, '?') !== false ? '&' : '?') . filemtime($file);
@@ -608,7 +611,7 @@ namespace Prototypr {
 				}
 			}
 			//use annotations?
-			if($class && $this->config('annotations')) {
+			if($class && $this->config['annotations']) {
 				//reflect class
 				$ref = new \ReflectionClass($class);
 				//loop through props
@@ -808,7 +811,7 @@ namespace Prototypr {
 			//bind callback
 			$route['callback'] = $this->bind($route['callback']);
 			//set module
-			$route['module'] = $this->config('module_loading');
+			$route['module'] = $this->config['module_loading'];
 			//cache route
 			$this->routes[$path] = $route;
 			//return
@@ -821,7 +824,7 @@ namespace Prototypr {
 				$data = '[' . date('Y-m-d H:i:s') . '] ' . $data;
 			}
 			//save to cache
-			$res = $this->cache($this->config('logs_dir') . "/{$name}.log", $data, [ 'append' => true ]);
+			$res = $this->cache($this->config['logs_dir'] . "/{$name}.log", $data, [ 'append' => true ]);
 			//log event
 			$this->event('app.log', [
 				'name' => $name,
@@ -839,7 +842,7 @@ namespace Prototypr {
 			], $opts);
 			//add base path?
 			if(strpos($path, '/') !== 0 && strpos($path, ':') === false) {
-				$path = $this->config('cache_dir') . '/' . $path;
+				$path = $this->config['cache_dir'] . '/' . $path;
 			}
 			//add ext?
 			if(strpos($path, '.') === false) {
@@ -979,7 +982,7 @@ namespace Prototypr {
 			}
 			//use request method?
 			if(!$key || $useReqMethod) {
-				array_unshift($key, in_array($_SERVER['REQUEST_METHOD'], $postVars) ? '_POST' : '_GET');
+				array_unshift($key, in_array($this->config['method'], $postVars) ? '_POST' : '_GET');
 			}
 			//set value
 			$value = $GLOBALS;
@@ -1264,7 +1267,7 @@ namespace Prototypr {
 				}
 				//log response error?
 				if($status < 100 || $status >= 400) {
-					$this->log('errors', 'HTTP REQUEST ' . $status . ': ' . $opts['method'] . ' ' . $opts['url']);
+					$this->log('errors', 'HTTP CLIENT: ' . $status . ' ' . $opts['method'] . ' ' . $opts['url']);
 				}
 			}
 			//return
@@ -1281,7 +1284,7 @@ namespace Prototypr {
 				'to' => trim($to),
 				'to_name' => '',
 				'from' => $this->config('mail_from') ?: 'no-reply@' . $this->input('SERVER.HTTP_HOST'),
-				'from_name' => $this->config('mail_name') ?: $this->config('name'),
+				'from_name' => $this->config('mail_name') ?: $this->config['name'],
 				'headers' => [],
 				'html' => null,
 			], $opts);
@@ -1440,10 +1443,10 @@ namespace Prototypr {
 					$this->cache('cron-running', null);
 				}
 				//create web cron?
-				if(!isset($_GET['cron']) && $this->config('webcron') && !$this->config('cli')) {
+				if(!isset($_GET['cron']) && $this->config['webcron'] && !$this->config['cli']) {
 					//call now?
 					if($next <= time() && !$isRunning) {
-						$url = $this->config('base_url') . '?cron=' . time();
+						$url = $this->config['base_url'] . '?cron=' . time();
 						$this->http($url, [ 'blocking' => false ]);
 					}
 					//stop
@@ -1499,8 +1502,8 @@ namespace Prototypr {
 			$code = 0;
 			$fallback = 404;
 			$matched = false;
-			$pathInfo = (string) $this->config('pathinfo');
-			$webCron = $this->config('webcron') && !$this->config('cli');
+			$pathInfo = (string) $this->config['pathinfo'];
+			$webCron = $this->config['webcron'] && !$this->config['cli'];
 			$cliCron = isset($_SERVER['argv']) && in_array('-cron', $_SERVER['argv']);
 			//init event
 			$this->event('app.init');
@@ -1555,7 +1558,7 @@ namespace Prototypr {
 					$target = preg_replace('/(^|\/)' . $fallback . '(\/|$)/', $m[0], $target);
 				}
 				//valid method?
-				if($route['methods'] && !in_array($_SERVER['REQUEST_METHOD'], $route['methods'])) {
+				if($route['methods'] && !in_array($this->config['method'], $route['methods'])) {
 					continue;
 				}
 				//extract params
@@ -1679,7 +1682,7 @@ namespace Prototypr {
 				if(!$index) continue;
 				//set function
 				$fn = $item['function'] . '()';
-				$file = isset($item['file']) ? str_replace($this->config('base_dir') . '/', '', $item['file']) : '';
+				$file = isset($item['file']) ? str_replace($this->config['base_dir'] . '/', '', $item['file']) : '';
 				//has class?
 				if(isset($item['type']) && $item['type']) {
 					$fn = $item['class'] . $item['type'] . $fn;
@@ -1717,11 +1720,12 @@ namespace Prototypr {
 			//custom error handling?
 			if($error = $this->event('app.error', $error)) {
 				//build error message
-				$errMsg = 'PHP ' . $error['type'] . ':  ' . $error['message'] . ' in ' . $error['file'] . ' on line ' . $error['line'];
+				$errMsg = 'PHP ' . $error['type'] . ': ' . $error['message'] . ' in ' . $error['file'] . ' on line ' . $error['line'];
+				$errMsgLog = $errMsg . ' (' . $this->config['method'] . ' ' . $this->config['url'] . ')';
 				//php error log
-				error_log($errMsg);
+				error_log($errMsgLog);
 				//app log error
-				$this->log('errors', $errMsg);
+				$this->log('errors', $errMsgLog);
 				//display error?
 				if($error['display']) {
 					//show debug?
