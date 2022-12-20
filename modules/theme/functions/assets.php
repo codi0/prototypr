@@ -20,12 +20,12 @@ $this->queue('manifest', 'manifest.json');
 $this->queue('favicon', 'assets/img/favicon.png');
 
 //Queue css
-$this->queue('css', 'https://cdn.jsdelivr.net/gh/codi0/fstage@0.3.3/src/css/fstage.min.css');
+$this->queue('css', 'https://cdn.jsdelivr.net/gh/codi0/fstage@0.3.9/src/css/fstage.min.css');
 $this->queue('css', 'assets/css/app.css', [ 'fstage' ]);
 
 //Queue js
-$this->queue('js', 'https://cdn.jsdelivr.net/gh/codi0/fstage@0.3.3/src/js/fstage.min.js');
+$this->queue('js', 'https://cdn.jsdelivr.net/gh/codi0/fstage@0.3.9/src/js/fstage.min.js');
 $this->queue('js', 'assets/js/app.js', [ 'fstage' ]);
 
 //You can also arbitrary css or js code
-$this->queue('js', 'console.log(Fstage);', [ 'fstage' ]);
+//$this->queue('js', 'console.log(Fstage);', [ 'fstage' ]);

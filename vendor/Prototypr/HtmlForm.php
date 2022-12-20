@@ -7,10 +7,10 @@ class HtmlForm {
 	use ConstructTrait;
 
 	protected $name = '';
+	protected $fieldset = '';
 	protected $attr = [];
 	protected $fields = [];
 	protected $values = [];
-	protected $inline = [];
 
 	protected $model = [];
 	protected $errors = [];
@@ -109,16 +109,9 @@ class HtmlForm {
 		return $this;
 	}
 
-	public function inline($tag, $code) {
-		//save inline
-		$this->inline[] = [ 'tag' => $tag, 'code' => $code ];
-		//chain it
-		return $this;
-	}
-
 	public function input($name, array $config=[]) {
 		//remove label?
-		if(in_array($config['type'], [ 'hidden', 'submit' ])) {
+		if(isset($config['type']) && in_array($config['type'], [ 'hidden', 'submit' ])) {
 			$config['label'] = '';
 		}
 		//add field
@@ -152,6 +145,14 @@ class HtmlForm {
 		$config['html'] = $html;
 		//return
 		return $this->input($name, $config);
+	}
+
+	public function inline($tag, $code) {
+		return $this->input('html', [
+			'wrap' => false,
+			'label' => '',
+			'html' => "<$tag>\n$code\n</$tag>\n",
+		]);
 	}
 
 	public function isValid() {
@@ -217,13 +218,9 @@ class HtmlForm {
 			//get value
 			$values[$name] = $this->kernel->input($name);
 			//process filters
-			foreach($filters as $filter) {
-				$values[$name] = $this->kernel->validator->filter($filter, $values[$name]);
-			}
+			$values[$name] = $this->kernel->validator->filter($filters, $values[$name]);
 			//process rules
-			foreach($rules as $rule) {
-				$this->kernel->validator->isValid($rule, $values[$name]);
-			}
+			$this->kernel->validator->isValid($rules, $values[$name]);
 			//process errors
 			foreach($this->kernel->validator->errors($name) as $error) {
 				//create array?
@@ -329,6 +326,8 @@ class HtmlForm {
 		$html = '';
 		$formAttr = [];
 		$modelData = $this->getModelData();
+		//reset props
+		$this->fieldset = '';
 		//open form
 		$html .= '<form' . Html::formatAttr($this->attr) . '>' . "\n";
 		//success message?
@@ -368,6 +367,9 @@ class HtmlForm {
 				'placeholder' => '',
 				'label' => str_replace('_', ' ', ucfirst($name)),
 				'error' => isset($this->errors[$name]) ? $this->errors[$name] : [],
+				'wrap' => true,
+				'fieldset' => '',
+				'fieldset_attr' => [],
 			], $opts);
 			//update value?
 			if(isset($this->values[$name])) {
@@ -381,43 +383,81 @@ class HtmlForm {
 					$opts['value'] = (string) $tmp;
 				}
 			}
-			//add label?
-			if(!empty($opts['label'])) {
-				$field .= '<label for="' . $opts['name'] . '">' . $opts['label'] . '</label>' . "\n";
+			//convert name?
+			if(strpos($opts['name'], '.') !== false) {
+				//tmp name
+				$tmpName = '';
+				//loop through name parts
+				foreach(explode('.', $opts['name']) as $part) {
+					if($tmpName) {
+						$tmpName .= '[' . $part . ']';
+					} else {
+						$tmpName .= $part;
+					}
+				}
+				//update name
+				$opts['name'] = $tmpName;
 			}
-			//custom render?
+			//add html before?
+			if(isset($opts['before']) && $opts['before']) {
+				$field .= trim($opts['before']) . "\n";
+			}
+			//add field wrap open?
+			if($opts['wrap'] && $opts['type'] !== 'hidden') {
+				//format classes
+				$classes  = 'field ' . $opts['type'];
+				$classes .= ($opts['type'] !== $name) ? ' ' . $name : '';
+				$classes .= $opts['error'] ? ' has-error' : '';
+				$classes .= (stripos($field, '<label') === false) ? ' no-label' : '';
+				//add html
+				$field .= '<div class="' . preg_replace('/\_|\./', '-', $classes) . '">' . "\n";
+			}
+			//add field label?
+			if(!empty($opts['label'])) {
+				$field .= '<label for="' . $opts['name'] . '">' . $opts['label'] . ($opts['required'] ? '<span class="required">*</span>' : '') . '</label>' . "\n";
+			}
+			//render field html
 			if(isset($opts['html']) && $opts['html']) {
-				$field .= is_callable($opts['html']) ? call_user_func($opts['html'], $opts) : $opts['html'];
+				$field .= (is_callable($opts['html']) ? call_user_func($opts['html'], $opts) : $opts['html']) . "\n";
 			} else {
 				$method = $opts['type'];
 				$attr = $this->formatFieldAttr($opts);
-				$field .= $this->kernel->html->$method($opts['name'], $opts['value'], $attr);
+				$field .= $this->kernel->html->$method($opts['name'], $opts['value'], $attr) . "\n";
+			}
+			//add field errors?
+			foreach((array) $opts['error'] as $error) {
+				$field .= '<div class="error">' . $error . '</div>' . "\n";
+			}
+			//add field wrap close?
+			if($opts['wrap'] && $opts['type'] !== 'hidden') {
+				$field .= '</div>' . "\n";
 			}
 			//add html after?
 			if(isset($opts['after']) && $opts['after']) {
-				$field .= $opts['after'];
+				$field .= trim($opts['after']) . "\n";
 			}
-			//trim output
-			$field = trim($field) . "\n";
-			//format classes
-			$classes  = 'field ' . $opts['type'];
-			$classes .= ($opts['type'] !== $name) ? ' ' . $name : '';
-			$classes .= $opts['error'] ? ' has-error' : '';
-			$classes .= (stripos($field, '<label') === false) ? ' no-label' : '';
-			//open field wrapper?
-			if($opts['type'] !== 'hidden') {
-				$html .= '<div class="' . str_replace('_', '-', $classes) . '">' . "\n";
+			//setup fieldset?
+			if($opts['fieldset'] != $this->fieldset) {
+				//close fieldset?
+				if($this->fieldset) {
+					$html .= '</fieldset>' . "\n";
+				}
+				//open fieldset?
+				if($opts['fieldset']) {
+					$fName = explode('.', $name)[0];
+					$fAttr = array_merge([ 'data-name' => $fName ], $opts['fieldset_attr']);
+					$html .= '<fieldset' . Html::formatAttr($fAttr) . '>' . "\n";
+					$html .= '<legend>' . str_replace('_', ' ', ucfirst($opts['fieldset'])) . '</legend>' . "\n";
+				}
+				//cache fieldset
+				$this->fieldset = $opts['fieldset'];
 			}
-			//add field
-			$html .= trim($field) . "\n";
-			//display any errors
-			foreach((array) $opts['error'] as $error) {
-				$html .= '<div class="error">' . $error . '</div>' . "\n";
-			}
-			//close field wrapper
-			if($opts['type'] !== 'hidden') {
-				$html .= '</div>' . "\n";
-			}
+			//add to html
+			$html .= $field;
+		}
+		//close fieldset?
+		if($this->fieldset) {
+			$html .= '</fieldset>' . "\n";
 		}
 		//close form
 		$html .= '</form>' . "\n";
@@ -427,22 +467,16 @@ class HtmlForm {
 			$html .= 'document.getElementById("' . $this->name . '-form").scrollIntoView();' . "\n";
 			$html .- '</script>' . "\n";
 		}
-		//add inline scripts?
-		foreach($this->inline as $inline) {
-			$html .= "<" . $inline['tag'] . ">" . "\n";
-			$html .= $inline['code'] . "\n";
-			$html .= "</" . $inline['tag'] . ">" . "\n";
-		}
 		//return
 		return $html;
 	}
 
 	protected function formatFieldAttr(array $attr) {
-		//attrs to remove
-		$remove = [ 'name', 'value', 'label', 'error', 'validate', 'filter', 'before', 'after', 'override' ];
+		//blacklist keys
+		$blacklist = [ 'name', 'value', 'label', 'error', 'validate', 'filter', 'before', 'after', 'wrap', 'override', 'fieldset', 'fieldset_attr' ];
 		//loop through attributes
 		foreach($attr as $key => $val) {
-			if(in_array($key, $remove)) {
+			if(in_array($key, $blacklist)) {
 				unset($attr[$key]);
 			}
 		}

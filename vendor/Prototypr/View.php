@@ -111,6 +111,10 @@ class View {
 			if(!isset($data['meta']['noindex']) && $this->kernel->config('env') !== 'prod') {
 				$data['meta']['noindex'] = true;
 			}
+			//set default title?
+			if(!isset($data['meta']['title']) || !$data['meta']['title']) {
+				$data['meta']['title'] = str_replace('/', ' > ', ucfirst($data['js']['route']));
+			}
 			//use theme?
 			if($themePath) {
 				//update paths

@@ -130,15 +130,18 @@ class Html {
 			'name' => $name,
 			'options' => [],
 		], $opts);
+		//get options
+		$options = $opts['options'];
+		unset($opts['options']);
 		//set default value?
 		if($value === '' || $value === null) {
-			$value = array_keys($opts['options']);
+			$value = array_keys($options);
 			$value = $value ? $value[0] : '';
 		}
 		//open select
 		$html = '<select' . self::formatAttr($opts) . '>' . "\n";
 		//loop through options
-		foreach($opts['options'] as $key => $val) {
+		foreach($options as $key => $val) {
 			//standard opt?
 			if(!is_array($val)) {
 				$html .= '<option value="' . $key . '"' . ($key == $value ? ' selected' : '') . '>' . $val . '</option>' . "\n";

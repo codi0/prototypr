@@ -36,12 +36,15 @@ class Validator {
 		$this->filters[$name] = $fn;
 	}
 
-	public function errors($label='field') {
+	public function errors($label='') {
 		//set vars
 		$errors = [];
+		//format label
+		$label = explode('.', $label ?: '');
+		$label = ucfirst(str_replace('_', ' ', array_pop($label)));
 		//loop through errors
 		foreach($this->errors as $error) {
-			$errors[] = str_replace(':label', $label, $error);
+			$errors[] = trim(str_replace(':label', $label, $error));
 		}
 		//reset errors
 		$this->errors = [];
@@ -49,54 +52,77 @@ class Validator {
 		return $errors;
 	}
 
-	public function isValid($rule, $value) {
+	public function isValid($rules, $value) {
 		//set vars
-		$args = [];
-		//has args?
-		if(strpos($rule, '(') !== false) {
-			list($rule, $args) = explode('(', $rule);
-			$args = array_map('trim', explode(',', trim($args, ')')));
+		$result = true;
+		//format rules?
+		if(!is_array($rules)) {
+			$rules = array_map('trim', explode('|', $rules));
 		}
-		//rule exists?
-		if(!isset($this->rules[$rule])) {
-			throw new \Exception("Validation rule $rule does not exist");
+		//is field not set?
+		if($this->ruleRequired($value)) {
+			$rules = in_array('required', $rules) ? [ 'required' ] : [];
 		}
-		//is callable?
-		if(!is_callable($this->rules[$rule])) {
-			throw new \Exception("Validation rule $rule is not a valid callable");
-		}
-		//execute callback
-		$error = call_user_func($this->rules[$rule], $value, ...$args);
-		//store error?
-		if(!empty($error)) {
-			$this->errors[] = $error;
+		//loop through rules
+		foreach(array_unique($rules) as $rule) {
+			//set vars
+			$args = [];
+			//has args?
+			if(strpos($rule, '(') !== false) {
+				list($rule, $args) = explode('(', $rule);
+				$args = array_map('trim', explode(',', trim($args, ')')));
+			}
+			//rule exists?
+			if(!isset($this->rules[$rule])) {
+				throw new \Exception("Validation rule $rule does not exist");
+			}
+			//is callable?
+			if(!is_callable($this->rules[$rule])) {
+				throw new \Exception("Validation rule $rule is not a valid callable");
+			}
+			//execute callback
+			$error = call_user_func($this->rules[$rule], $value, ...$args);
+			//store error?
+			if(!empty($error)) {
+				$this->errors[] = $error;
+				$result = false;
+			}
 		}
 		//return
-		return empty($error);
+		return $result;
 	}
 
-	public function filter($filter, $value) {
-		//set vars
-		$args = [];
-		//has args?
-		if(strpos($filter, '(') !== false) {
-			list($filter, $args) = explode('(', $filter);
-			$args = array_map('trim', explode(',', trim(')', $args)));
+	public function filter($filters, $value) {
+		//format filters?
+		if(!is_array($filters)) {
+			$filters = array_map('trim', explode('|', $filters));
 		}
-		//has filter?
-		if(is_string($filter) && isset($this->filters[$filter])) {
-			$filter = $this->filters[$filter];
+		//loop through filters
+		foreach(array_unique($filters) as $filter) {
+			//set vars
+			$args = [];
+			//has args?
+			if(strpos($filter, '(') !== false) {
+				list($filter, $args) = explode('(', $filter);
+				$args = array_map('trim', explode(',', trim(')', $args)));
+			}
+			//has filter?
+			if(is_string($filter) && isset($this->filters[$filter])) {
+				$filter = $this->filters[$filter];
+			}
+			//is callable?
+			if(!is_callable($filter)) {
+				throw new \Exception("Filter is not a valid callable");
+			}
+			//force to string?
+			if(is_string($filter) && strpos($filter, 'str') === 0) {
+				$value = is_string($value) ? $value : '';
+			}
+			//execute callback
+			$value = call_user_func($filter, $value, ...$args);
 		}
-		//is callable?
-		if(!is_callable($filter)) {
-			throw new \Exception("Filter is not a valid callable");
-		}
-		//force to string?
-		if(is_string($filter) && strpos($filter, 'str') === 0) {
-			$value = is_string($value) ? $value : '';
-		}
-		//execute callback
-		return call_user_func($filter, $value, ...$args);
+		//return
+		return $value;
 	}
 
 	protected function ruleRequired($value) {
@@ -106,7 +132,7 @@ class Validator {
 	}
 
 	protected function ruleNowhitespace($value) {
-		if($value && preg_match('/\s/', $value)) {
+		if(preg_match('/\s/', $value)) {
 			return ':label must not contain whitespace';
 		}
 	}
@@ -123,7 +149,7 @@ class Validator {
 		//set vars
 		$pattern = '/' . preg_quote($pattern, '/') . '/';
 		//validation failed?
-		if($value && !preg_match($pattern, $value)) {
+		if(!preg_match($pattern, $value)) {
 			return ':label must match regex pattern'; 
 		}
 	}
@@ -152,7 +178,7 @@ class Validator {
 
 	protected function ruleInt($value) {
 		//validation failed?
-		if($value && ((string) $value !== (string) intval($value))) {
+		if((string) $value !== (string) intval($value)) {
 			return ':label must be an integer'; 
 		}
 	}
@@ -170,7 +196,7 @@ class Validator {
 	}
 
 	protected function ruleId($value) {
-		if($value && !preg_match('/^[0-9]+$/', $value)) {
+		if(!preg_match('/^[0-9]+$/', $value)) {
 			return ':label must be a numeric ID';
 		}
 	}
@@ -183,7 +209,7 @@ class Validator {
 		//set args
 		$r = $length ? '{' . $length . '}' : '+';
 		//error found?
-		if($value && !preg_match('/^[0-9]' . $r . '$/', $value)) {
+		if(!preg_match('/^[0-9]' . $r . '$/', $value)) {
 			return ':label must be ' . ($length ? $length . ' digits ' : 'digits only');
 		}
 	}
@@ -194,7 +220,7 @@ class Validator {
 
 	protected function ruleNumeric($value) {
 		//validation failed?
-		if($value && !is_numeric($value)) {
+		if(!is_numeric($value)) {
 			return ':label must be a number'; 
 		}
 	}
@@ -205,7 +231,7 @@ class Validator {
 
 	protected function ruleAlphanumeric($value) {
 		//validation failed?
-		if($value && !preg_match('/^[a-z0-9]+$/i', $value)) {
+		if(!preg_match('/^[a-z0-9]+$/i', $value)) {
 			return ':label must only contain letters and numbers'; 
 		}
 	}
@@ -216,7 +242,7 @@ class Validator {
 
 	protected function ruleUuid($value) {
 		//validation failed?
-		if($value && !preg_match('/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89AB][a-f0-9]{3}-[a-f0-9]{12}$/i', $value)) {
+		if(!preg_match('/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89AB][a-f0-9]{3}-[a-f0-9]{12}$/i', $value)) {
 			return ':label must be a valid UUID'; 
 		}
 	}
@@ -249,7 +275,7 @@ class Validator {
 
 	protected function ruleBool($value) {
 		//validation failed?
-		if($value && ($value !== (bool) $value)) {
+		if($value !== (bool) $value) {
 			return ':label must be a boolean'; 
 		}
 	}
@@ -268,7 +294,7 @@ class Validator {
 
 	protected function ruleNull($value) {
 		//validation failed?
-		if($value && $value !== null) {
+		if($value !== null) {
 			return $this->addError(':label must be null'); 
 		}
 	}
@@ -285,14 +311,15 @@ class Validator {
 		//set max as min?
 		if(!$max && $min) {
 			$max = $min;
-			$min = 0;
 		}
+		//format value
+		$value = $value ?: '';
 		//min length failed?
-		if($value && strlen($value) < $min) {
+		if(strlen($value) < $min) {
 			return ':label must be at least ' . $min . ' characters'; 
 		}
 		//max length failed?
-		if($value && strlen($value) > $max) {
+		if(strlen($value) > $max) {
 			return ':label must be no more than ' . $max . ' characters'; 
 		}
 	}
@@ -305,8 +332,9 @@ class Validator {
 		//set max as min?
 		if(!$max && $min) {
 			$max = $min;
-			$min = 0;
 		}
+		//format value
+		$value = $value ?: '';
 		//pad to min length?
 		if(strlen($value) < $min) {
 			$value = str_pad($value, $min);
@@ -327,14 +355,13 @@ class Validator {
 		//set max as min?
 		if(!$max && $min) {
 			$max = $min;
-			$min = 0;
 		}
 		//min range failed?
-		if($value && $value < $min) {
+		if($value < $min) {
 			return ':label must be at least ' . $min;
 		}
 		//max range failed?
-		if($value && $value > $max) {
+		if($value > $max) {
 			return ':label must be no more than ' . $min;
 		}
 	}
@@ -347,7 +374,6 @@ class Validator {
 		//set max as min?
 		if(!$max && $min) {
 			$max = $min;
-			$min = 0;
 		}
 		//set to min?
 		if($value < $min) {
@@ -362,7 +388,7 @@ class Validator {
 	}
 
 	protected function ruleEmail($value) {
-		if($value && !filter_var($value, FILTER_VALIDATE_EMAIL)) {
+		if(!filter_var($value, FILTER_VALIDATE_EMAIL)) {
 			return ':label must be a valid email';
 		}
 	}
@@ -384,7 +410,7 @@ class Validator {
 			$cc = '';
 		}
 		//valid format?
-		if($value && !preg_match('/^' . $cc . '[0-9]{6,14}$/', $valFormatted)) {
+		if(!preg_match('/^' . $cc . '[0-9]{6,14}$/', $valFormatted)) {
 			return ':label must be a valid phone number'; 
 		}
 	}
@@ -419,7 +445,7 @@ class Validator {
 			$method = 'ruleEmail';
 		}
 		//validation failed?
-		if($value && $this->$method($value)) {
+		if($this->$method($value)) {
 			return ':label must be a valid email or phone number';
 		}
 	}
@@ -437,7 +463,7 @@ class Validator {
 
 	protected function ruleUrl($value) {
 		//validation failed?
-		if($value && !filter_var($value, FILTER_VALIDATE_URL)) {
+		if(!filter_var($value, FILTER_VALIDATE_URL)) {
 			return ':label must be a valid URL'; 
 		}
 	}
@@ -448,7 +474,7 @@ class Validator {
 
 	protected function ruleIp($value) {
 		//validation failed?
-		if($value && !filter_var($value, FILTER_VALIDATE_IP)) {
+		if(!filter_var($value, FILTER_VALIDATE_IP)) {
 			return ':label must be a valid IP address'; 
 		}
 	}
@@ -458,18 +484,15 @@ class Validator {
 	}
 
 	protected function ruleDateFormat($value, $format='Y-m-d') {
-		//has value?
-		if($value) {
-			//check first part only?
-			if(strpos($format, ' ') === false) {
-				$value = explode(' ', $value)[0];
-			}
-			//convert to datetime
-			$d = \DateTime::createFromFormat($format, $value);
-			//format matches?
-			if(!$d || $d->format($format) !== $value) {
-				return ':label must be a valid ' . $format . ' date';
-			}
+		//check first part only?
+		if($value && strpos($format, ' ') === false) {
+			$value = explode(' ', $value)[0];
+		}
+		//convert to datetime
+		$d = \DateTime::createFromFormat($format, $value);
+		//format matches?
+		if(!$d || $d->format($format) !== $value) {
+			return ':label must be a valid ' . $format . ' date';
 		}
 	}
 
@@ -493,7 +516,7 @@ class Validator {
 		$unsafe = preg_replace('/\s+/', '', $value); 
 		$unsafe = preg_match('/(onclick|onload|onerror|onmouse|onkey)|(script|alert|confirm)[\:\>\(]/iS', $unsafe);
 		//validation failed?
-		if($value && $value !== filter_var($value, FILTER_SANITIZE_STRING, FILTER_FLAG_NO_ENCODE_QUOTES)) {
+		if($value !== filter_var($value, FILTER_SANITIZE_STRING, FILTER_FLAG_NO_ENCODE_QUOTES)) {
 			return ':label contains unsafe characters'; 
 		}
 	}
@@ -530,7 +553,7 @@ class Validator {
 			$equals = $attr = $compare;
 		}
 		//validation failed?
-		if($value && $value !== $equals) {
+		if($value !== $equals) {
 			return ':label must be equal to ' . $attr; 
 		}
 	}
@@ -551,7 +574,7 @@ class Validator {
 		//parse table name
 		list($table, $field) = explode('.', $field, 2);
 		//does value exist?
-		if($value && $this->kernel->db->get_var("SELECT $field FROM $table WHERE $field = %s", $value)) {
+		if($this->kernel->db->get_var("SELECT $field FROM $table WHERE $field = %s", $value)) {
 			return ':label already exists'; 
 		}
 	}
@@ -575,7 +598,7 @@ class Validator {
 		//build hash
 		$hash = $this->crypt->hashPwd($value);
 		//validation failed?
-		if($value && $hash !== $value) {
+		if($hash !== $value) {
 			return ':label must be a hash';
 		}
 	}

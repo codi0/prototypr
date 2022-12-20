@@ -2,6 +2,8 @@
 
 namespace {
 
+	require_once('Utils.php');
+
 	function prototypr($opts=[]) {
 		return \Prototypr\Kernel::factory($opts);
 	}
@@ -517,40 +519,12 @@ namespace Prototypr {
 		}
 
 		public function config($key=null, $val='%%null%%') {
-			//set vars
-			$tmp = $this->config;
-			$parts = $key ? explode('.', $key) : [];
-			//set config item?
-			if($parts && $val !== '%%null%%') {
-				//set vars
-				$c =& $this->config;
-				//loop through parts
-				foreach($parts as $k => $v) {
-					if($k+1 < count($parts)) {
-						$c[$v] = [];
-						$c =& $c[$v];
-					} else {
-						$c[$v] = $val;
-					}
-				}
+			//setitem?
+			if($key && $val !== '%%null%%') {
+				$this->config = Utils::addToArray($this->config, $key, $val);
 			}
-			//loop through parts
-			foreach($parts as $k => $v) {
-				//is array?
-				if(is_array($tmp) && isset($tmp[$v])) {
-					$tmp = $tmp[$v];
-					continue;
-				}
-				//is object?
-				if(is_object($tmp) && isset($tmp->$v)) {
-					$tmp = $tmp->$v;
-					continue;
-				}
-				//failed
-				return null;
-			}
-			//return
-			return $tmp;
+			//get item
+			return Utils::getFromArray($this->config, $key);
 		}
 
 		public function platform($key=null, $val=null) {
@@ -858,9 +832,6 @@ namespace Prototypr {
 		}
 
 		public function cache($path, $data='%%null%%', array $opts=[]) {
-			//set vars
-			$output = false;
-			$closure = ($data instanceof \Closure);
 			//default opts
 			$opts = array_merge([
 				'append' => false,
@@ -879,7 +850,7 @@ namespace Prototypr {
 				return is_file($path) ? unlink($path) : true;
 			}
 			//set data?
-			if($data !== '%%null%%' && !$closure) {
+			if($data !== '%%null%%') {
 				//set expiry?
 				if($opts['expiry']) {
 					//set data
@@ -905,78 +876,133 @@ namespace Prototypr {
 					mkdir(dirname($path), 0755, true);
 				}
 				//save to file
-				return file_put_contents($path, $data, $opts['append'] ? LOCK_EX|FILE_APPEND : LOCK_EX);
+				$res = file_put_contents($path, $data, $opts['append'] ? LOCK_EX|FILE_APPEND : LOCK_EX);
+				//return
+				return ($res !== false);
 			}
+			//default output
+			$output = null;
 			//get file output?
 			if(is_file($path)) {
+				//get data
 				$output = file_get_contents($path);
-			}
-			//data found?
-			if($output !== false) {
-				$decode = json_decode($output, true);
-				$output = is_null($decode) ? ($closure ? null : $output) : $decode;
-			}
-			//has expiry?
-			if(is_array($output) && isset($output['expiry'])) {
-				$expiry = $output['expiry'];
-				$output = $output['data'];
-				//has expired?
-				if(time() > $expiry) {
+				//data found?
+				if($output !== false) {
+					//try to decode output
+					$decode = json_decode($output, true);
+					$output = is_null($decode) ? $output : $decode;
+					//has cache expiry?
+					if(is_array($output) && count($output) == 2 && isset($output['expiry'])) {
+						//has expired?
+						if(time() > $output['expiry']) {
+							$output = null;
+							unlink($path);
+						} else {
+							$output = $output['data'];
+						}
+					}
+				} else {
+					//no output
 					$output = null;
-					unlink($path);
 				}
-			}
-			//call closure?
-			if($closure) {
-				$output = $data($output);
 			}
 			//return
 			return $output;
 		}
 
-		public function input($key=null, $clean='html') {
+		public function memoize($id, $fn=null, $cacheExpiry=null) {
 			//set vars
-			$global = null;
-			$globVars = [ 'GET', 'POST', 'COOKIE', 'REQUEST', 'SERVER' ];
-			//ensure globals set
+			$results = [];
+			$kernel = $this;
+			//ID is closure?
+			if($id instanceof \Closure) {
+				$cacheExpiry = $fn;
+				$fn = $id;
+				$id = '';
+			}
+			//create function wrapper
+			return function() use($id, $fn, $cacheExpiry, &$results, $kernel) {	
+				//get args
+				$args = func_get_args();
+				//create cache ID
+				$id = 'memoize/' . md5($id . serialize($args));
+				//in local cache?
+				if(!isset($results[$id])) {
+					//check file cache?
+					if($cacheExpiry !== null) {
+						$results[$id] = $kernel->cache($id);
+					}
+					//call function?
+					if(!isset($results[$id])) {
+						//execute function
+						$results[$id] = call_user_func_array($fn, $args);
+						//save to file cache?
+						if($results[$id] !== null && $cacheExpiry !== null) {
+							$kernel->cache($id, $results[$id], [ 'expiry' => $cacheExpiry ]);
+						}
+					}
+				}
+				//return
+				return $results[$id];
+			};
+		}
+
+		public function input($key=[], array $opts=[]) {
 			$_GET; $_POST; $_COOKIE; $_REQUEST; $_SERVER;
-			//inspect key?
+			//set vars
+			$isHeader = false;
+			$useReqMethod = true;
+			$key = $key ? explode('.', $key) : [];
+			$globVars = [ 'GET', 'POST', 'COOKIE', 'REQUEST', 'SERVER' ];
+			$postVars = [ 'POST', 'PUT', 'PATCH' ];
+			//set default opts
+			$opts = array_merge([
+				'clean' => 'html',
+				'default' => null,
+			], $opts);
+			//process key?
 			if(!empty($key)) {
-				if(strpos($key, '.') !== false) {
-					list($global, $key) = explode('.', $key, 2);
-				} else if(in_array(strtoupper($key), $globVars)) {
-					$global = $key;
+				//format first segment
+				$tmp = strtoupper($key[0]);
+				//global matched?
+				if(in_array($tmp, $globVars)) {
+					$key[0] = '_' . $tmp;
+					$useReqMethod = false;
+				} if(in_array($tmp, $postVars)) {
+					$key[0] = '_POST';
+					$useReqMethod = false;
+				} else if($tmp === 'HEADER') {
+					$key[0] = '_SERVER';
+					$useReqMethod = false;
+					$isHeader = true;
 				}
 			}
-			//format global
-			$global = strtoupper($global ?: $_SERVER['REQUEST_METHOD']);
-			//use $_POST?
-			if(in_array($global, [ 'PUT', 'DELETE', 'PATCH' ])) {
-				$global = 'POST';
+			//use request method?
+			if(!$key || $useReqMethod) {
+				array_unshift($key, in_array($_SERVER['REQUEST_METHOD'], $postVars) ? '_POST' : '_GET');
 			}
-			//use $_SERVER?
-			if(in_array($global, [ 'HEADER' ])) {
-				$global = 'SERVER';
-				$key = $key ? 'HTTP_' . strtoupper($key) : null;
-			}
-			//global is key?
-			if($key && $global === strtoupper($key)) {
-				$key = null;
-			}
-			//format global
-			$global = '_' . $global;
-			//has global?
-			if(!isset($GLOBALS[$global])) {
-				return null;
-			}
-			//has key?
-			if(empty($key)) {
-				$value = $GLOBALS[$global];
-			} else {
-				$value = isset($GLOBALS[$global][$key]) ? $GLOBALS[$global][$key] : null;
+			//set value
+			$value = $GLOBALS;
+			//loop through key
+			foreach($key as $k => $v) {
+				//is header?
+				if($isHeader && count($key) == ($k+1)) {
+					//add http prefix?
+					if(stripos($v, 'HTTP_') !== 0) {
+						$v = 'HTTP_' . $v;
+					}
+					//uppercase
+					$v = strtoupper($v);
+				}
+				//value found?
+				if(!isset($value[$v])) {
+					return $opts['default'];
+				}
+				//next segment
+				$value = $value[$v];
 			}
 			//return
-			return $this->clean($value, $clean);
+			return $this->clean($value, $opts['clean']);
 		}
 
 		public function clean($value, $context='html') {
@@ -1521,6 +1547,7 @@ namespace Prototypr {
 			//loop through routes
 			foreach($this->routes as $path => $route) {
 				//set vars
+				$params = [];
 				$target = $path;
 				//is fallback path?
 				if(preg_match('/(^|\/)' . $fallback . '(\/|$)/', $target, $m)) {
@@ -1531,13 +1558,30 @@ namespace Prototypr {
 				if($route['methods'] && !in_array($_SERVER['REQUEST_METHOD'], $route['methods'])) {
 					continue;
 				}
+				//extract params
+				foreach(explode('/', $target) as $seg) {
+					if($seg && $seg[0] === ':') {
+						$seg = str_replace([ ':', '?' ], '', $seg);
+						$params[$seg] = null;
+						$target = str_replace("/:$seg", "(\/.*)", $target);
+					}
+				}
+				//build regex
+				$regex = '/^' . str_replace([ '/', '\\\\' ], [ '\/', '\\' ], $target) . '$/';
 				//valid route?
-				if(!preg_match('/^' . str_replace([ '/', '\\\\' ], [ '\/', '\\' ], $target) . '$/', $pathInfo, $params)) {
+				if(!preg_match($regex, $pathInfo, $matches)) {
 					continue;
 				}
-				//format params
-				array_shift($params);
-				$params = array_map(function($v) { return str_replace('/', '', $v); }, $params);
+				//set param values?
+				if($params && $matches) {
+					//loop through matches
+					foreach($matches as $index => $match) {
+						if($index > 0) {
+							$key = array_keys($params)[$index-1];
+							$params[$key] = trim($match, '/');
+						}
+					}
+				}
 				//match found?
 				if($this->route($path, $params, true) !== false) {
 					$matched = true;

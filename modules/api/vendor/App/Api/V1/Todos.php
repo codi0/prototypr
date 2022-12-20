@@ -4,7 +4,7 @@ namespace App\Api\V1;
 
 class Todos extends \Prototypr\Route {
 
-	public $path = 'v1/todos';
+	public $path = 'v1/todos/:id?';
 	public $methods = [ 'GET', 'POST', 'PUT', 'DELETE' ];
 	public $auth = false;
 	public $public = true;
@@ -50,7 +50,9 @@ class Todos extends \Prototypr\Route {
 					'default' => null,
 				],
 			],
-			'rules' => [],
+			'rules' => [
+				'length(3,64)',
+			],
 			'filters' => [],
 		],
 		'description' => [
@@ -69,7 +71,9 @@ class Todos extends \Prototypr\Route {
 					'default' => null,
 				],
 			],
-			'rules' => [],
+			'rules' => [
+				'length(3,256)',
+			],
 			'filters' => [],
 		],
 		'status' => [
@@ -95,6 +99,81 @@ class Todos extends \Prototypr\Route {
 			],
 			'rules' => [],
 			'filters' => [],
+		],
+		'assignee' => [
+			'label' => 'Assignee',
+			'multiple' => false,
+			'children' => [
+				'first_name' => [
+					'label' => 'First name',
+					'desc' => 'Assignee first name',
+					'type' => 'string.text',
+					'contexts' => [
+						'POST' => [
+							'required' => false,
+							'source' => 'body',
+							'default' => null,
+						],
+						'PUT' => [
+							'required' => false,
+							'source' => 'body',
+							'default' => null,
+						],
+					],
+					'rules' => [
+						'length(3,32)',
+					],
+					'filters' => [],
+				],
+				'last_name' => [
+					'label' => 'Last name',
+					'desc' => 'Assignee last name',
+					'type' => 'string.text',
+					'contexts' => [
+						'POST' => [
+							'required' => false,
+							'source' => 'body',
+							'default' => null,
+						],
+						'PUT' => [
+							'required' => false,
+							'source' => 'body',
+							'default' => null,
+						],
+					],
+					'rules' => [
+						'length(3,32)',
+					],
+					'filters' => [],
+				],
+			],
+		],
+		'extras' => [
+			'label' => 'Extras',
+			'multiple' => true,
+			'children' => [
+				'file_path' => [
+					'label' => 'Add note here',
+					'desc' => 'Add some notes here',
+					'type' => 'string',
+					'contexts' => [
+						'POST' => [
+							'required' => false,
+							'source' => 'body',
+							'default' => null,
+						],
+						'PUT' => [
+							'required' => false,
+							'source' => 'body',
+							'default' => null,
+						],
+					],
+					'rules' => [
+						'length(3,256)',
+					],
+					'filters' => [],
+				],
+			],
 		],
 	];
 
@@ -146,6 +225,30 @@ class Todos extends \Prototypr\Route {
 		}
 		//return
 		return $output;
+	}
+
+	protected function onProcessInput(array $input) {
+		//remove all empty values
+		foreach($input as $k => $v) {
+			//is array?
+			if(is_array($v)) {
+				//recursive process
+				if($input[$k] = $this->onProcessInput($v)) {
+					//get first key
+					$firstKey = array_keys($input[$k])[0];
+					//reset keys?
+					if(is_numeric($firstKey)) {
+						$input[$k] = array_values($input[$k]);
+					}
+				}
+			}
+			//remove key?
+			if(empty($input[$k])) {
+				unset($input[$k]);
+			}
+		}
+		//return
+		return $input;
 	}
 
 	protected function read(array $filters) {

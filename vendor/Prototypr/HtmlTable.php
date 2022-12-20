@@ -70,7 +70,8 @@ class HtmlTable {
 		//guess columns?
 		if(!$this->columns && $this->data) {
 			//get keys
-			$keys = array_keys(array_shift($this->data));
+			$tmp = $this->data;
+			$keys = array_keys(array_shift($tmp));
 			//loop through keys
 			foreach($keys as $k) {
 				$this->columns[$k] = str_replace([ '-', '_' ], ' ', ucfirst($k));

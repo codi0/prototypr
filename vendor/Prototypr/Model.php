@@ -56,9 +56,9 @@ class Model {
 			throw new \Exception("Property $key not found");
 		}
 		//run custom filters
-		foreach($this->__meta['props'][$key]['filters'] as $filter) {
-			$val = $this->kernel->validator->filter($filter, $val);
-		}
+		$val = $this->kernel->validator->filter($this->__meta['props'][$key]['filters'], $val);
+		//type cast value
+		$val = $this->onTypecast($key, $val);
 		//filter value
 		$val = $this->onFilter($key, $val);
 		//update value?
@@ -113,9 +113,7 @@ class Model {
 			//get value
 			$val = $this->__meta['props'][$key]['value'];
 			//process custom rules
-			foreach($this->__meta['props'][$key]['rules'] as $rule) {
-				$this->kernel->validator->isValid($rule, $val);
-			}
+			$this->kernel->validator->isValid($this->__meta['props'][$key]['rules'], $val);
 			//process validation errors
 			foreach($this->kernel->validator->errors() as $error) {
 				$this->addError($key, $error);
@@ -298,7 +296,7 @@ class Model {
 		return $data;
 	}
 
-	protected function onFilter($key, $val) {
+	protected function onTypecast($key, $val) {
 		//set vars
 		$type = $this->__meta['props'][$key]['type'];
 		$orgVal = $this->__meta['props'][$key]['value'];
@@ -319,6 +317,10 @@ class Model {
 			$val = $val ?: NULL;
 		}
 		//return
+		return $val;
+	}
+
+	protected function onFilter($key, $val) {
 		return $val;
 	}
 

@@ -37,7 +37,7 @@ return prototypr([
 
 		//If not set, HTTP_HOST will be scanned for potential matches (E.g. ^dev.)
 		//Supported envs are dev, qa, staging, prod
-		'env' => NULL,
+		'env' => 'dev',
 		
 		//Designates a module to function as a theme (set to NULL to disable theme usage)
 		'theme' => 'theme',

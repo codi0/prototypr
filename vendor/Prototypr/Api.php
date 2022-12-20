@@ -12,6 +12,7 @@ class Api {
 	protected $basePath = '/';
 	protected $rawBody = '';
 	protected $hasRun = false;
+	protected $schemaRequest = false;
 
 	protected $routes = [];
 
@@ -44,6 +45,13 @@ class Api {
 		if(!$this->hasRun) {
 			//update flag
 			$this->hasRun = true;
+			//check for schema request
+			$segs = explode('/', $this->kernel->config('pathinfo'));
+			$lastSeg = explode('.', array_pop($segs), 2);
+			//schema request?
+			if($lastSeg[0] === 'schema') {
+				$this->schemaRequest = (isset($lastSeg[1]) && $lastSeg[1]) ? $lastSeg[1] : true;
+			}
 			//check raw body
 			if($this->rawBody = file_get_contents('php://input')) {
 				//set vars
@@ -67,7 +75,7 @@ class Api {
 				//format route
 				$route = $this->formatRoute($route);
 				//unset index?
-				if($index != $route['path']) {
+				if(!$route || $index != $route['path']) {
 					unset($this->routes[$index]);
 				}
 			}
@@ -101,7 +109,7 @@ class Api {
 				continue;
 			}
 			//add endpoint?
-			if($path = $this->getPath($route['path'], true)) {
+			if($path = $this->getPath($route['path'], false)) {
 				$endpoints[$path] = $route['methods'];
 			}
 		}
@@ -109,6 +117,7 @@ class Api {
 		return [
 			'code' => 200,
 			'data' => [
+				'base_url' => $this->getUrl('/') . '/',
 				'endpoints' => $endpoints,
 			],
 		];
@@ -162,74 +171,6 @@ class Api {
 		return $this->formatRoute($route);
 	}
 
-	public function describe($path, $method = null, $public = false) {
-		//format path
-		$path = $this->getPath($path, false);
-		//route exists?
-		if(!isset($this->routes[$path])) {
-			return [];
-		}
-		//get route
-		$route = $this->routes[$path];
-		//actions
-		$actions = [
-			'auth' => 'bool',
-			'public' => 'bool',
-			'input_schema' => 'array',
-			'output_schema' => 'array',
-			'callback' => 'unset',
-		];
-		//is public?
-		if($public) {
-			$actions['public'] = 'unset';
-		}
-		//is object?
-		if(is_object($route)) {
-			$route = $route->describe($method);
-		}
-		//empty route?
-		if(empty($route)) {
-			return [];
-		}
-		//loop through actions
-		foreach($actions as $key => $action) {
-			//select action
-			if($action === 'unset') {
-				//unset key?
-				if(array_key_exists($key, $route)) {
-					unset($route[$key]);
-				}
-			} else {
-				//set key?
-				if(!isset($route[$key])) {
-					$route[$key] = null;
-				}
-				//is bool?
-				if($action === 'bool') {
-					$route[$key] = !!$route[$key];
-				}
-				//is array?
-				if($action === 'array') {
-					$route[$key] = (array) ($route[$key] ?: []);
-				}
-			}
-		}
-		//loop through input schema
-		foreach($route['input_schema'] as $field => $meta) {
-			//is public?
-			if($public) {
-				unset($meta['rules'], $meta['filters']);
-				$route['input_schema'][$field] = $meta;
-			}
-		}
-		//set url?
-		if(!isset($route['url'])) {
-			$route['url'] = $this->getUrl($route['path']);
-		}
-		//return
-		return $route;
-	}
-
 	protected function addData($key, $val) {
 		$this->data[$key] = $val;
 	}
@@ -241,7 +182,6 @@ class Api {
 	protected function formatRoute($route) {
 		//set vars
 		$ctx = $this;
-		$isDescribe = isset($_GET['describe']);
 		//is array?
 		if(is_array($route)) {
 			//set array defaults
@@ -302,31 +242,28 @@ class Api {
 			$route['auth'] = [ $this, 'auth' ];
 		} else if($route['auth'] && !is_callable($route['auth'])) {
 			$route['auth'] = [ $this, $route['auth'] ];
-		}	
-		//cache using path
-		$this->routes[$route['path']] = $route;
-		//add route?
-		if($r = (array) $route) {
-			//full path
-			$r['path'] = $this->getPath($route['path'], true);
-			//describe API endpoint?
-			if($isDescribe && $route['public']) {
+		}
+		//full path
+		$route['path'] = $this->getPath($route['path'], true);
+		//show API endpoint schema?
+		if($this->schemaRequest && $route['public']) {
+			//has schema?
+			if(isset($route['schema'])) {
 				//reset vars
-				$r['auth'] = false;
-				$r['methods'] = [ 'GET' ];
-				//wrap describe method
-				$r['callback'] = function() use($ctx, $route) {
-					//get data
-					$data = $ctx->describe($route['path'], $_GET['describe'], true);
-					//return
-					return $ctx->respond([
-						'code' => $data ? 200 : 404,
-						'data' => $data,
-					]);
-				};
+				$route['auth'] = false;
+				$route['schema'] = $this->schemaRequest;
+				$route['methods_org'] = $route['methods'];
+				$route['methods'] = [ 'GET' ];
+			} else {
+				$route = [];
 			}
-			//add route
-			$this->kernel->route($r);
+		}
+		//add route?
+		if(!empty($route)) {
+			//cache by path
+			$this->routes[$route['path']] = $route;
+			//attach to router
+			$this->kernel->route($route);
 		}
 		//return
 		return $route;

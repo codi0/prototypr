@@ -21,10 +21,14 @@ $this->route('ui', function() {
 	$id = $this->input('GET.id') ?: 0;
 	//generate UI
 	if($object === 'table') {
-		echo $this->apiUi->$object($url);
+		$output = $this->apiUi->$object($url);
 	} else {
-		echo $this->apiUi->$object($url, $method, [ 'id' => $id ]);
+		$output = $this->apiUi->$object($url, $method, [ 'id' => $id ]);
 	}
+	//template
+	$this->tpl('ui', [
+		'output' => $output,
+	]);
 });
 
 
