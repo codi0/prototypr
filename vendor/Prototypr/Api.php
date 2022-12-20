@@ -10,9 +10,11 @@ class Api {
 	protected $errors = [];
 
 	protected $basePath = '/';
-	protected $rawBody = '';
 	protected $hasRun = false;
 	protected $schemaRequest = false;
+
+	protected $rawBody = '';
+	protected $rawBodyFormat = 'form';
 
 	protected $routes = [];
 
@@ -59,6 +61,7 @@ class Api {
 				//is json?
 				if($json = json_decode($this->rawBody, true)) {
 					$bodyArr = $json;
+					$this->rawBodyFormat = 'json';
 				} else if(!$_POST) {
 					parse_str($this->rawBody, $bodyArr);
 				}
@@ -117,7 +120,7 @@ class Api {
 		return [
 			'code' => 200,
 			'data' => [
-				'base_url' => $this->getUrl('/') . '/',
+				'base_url' => $this->getUrl('/'),
 				'endpoints' => $endpoints,
 			],
 		];
@@ -151,11 +154,11 @@ class Api {
 			$path = trim($path, '/');
 		}
 		//return
-		return $path ?: '/';
+		return $path;
 	}
 
 	public function getUrl($path) {
-		return rtrim($this->kernel->config('base_url'), '/') . '/' . $this->getPath($path);
+		return trim($this->kernel->config('base_url'), '/') . '/' . trim($this->getPath($path), '/');
 	}
 
 	public function addEndpoint($path, $callback=null, array $route=[]) {
