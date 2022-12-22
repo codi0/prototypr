@@ -1808,18 +1808,38 @@ namespace Prototypr {
 		protected $__calls = [];
 
 		public function __call($method, array $args) {
-			//target method exists?
-			if(method_exists($this, '__target')) {
-				//get target
+			//find target
+			if(isset($this->__calls[$method])) {
+				$target = $this->__calls[$method];
+			} else if(method_exists($this, '__target')) {
 				$target = $this->__target();
-				//can call method?
-				if(method_exists($target, $method)) {
-					return $target->$method(...$args);
+			}
+			//proxy.call event?
+			if(property_exists($this, '__kernel') && $this->__kernel) {
+				//execute event
+				$res = $this->__kernel->event('proxy.call', [
+					'target' => $target,
+					'method' => $method,
+					'args' => $args
+				]);
+				//update vars?
+				if($res && is_array($res)) {
+					//loop through vars
+					foreach([ 'target', 'method', 'args' ] as $k) {
+						if(isset($res[$k])) {
+							$$k = $res[$k];
+						}
+					}
 				}
 			}
-			//extension found?
-			if(isset($this->__calls[$method])) {
-				return $this->__calls[$method](...$args);
+			//target found?
+			if($target) {
+				//is closure?
+				if($target instanceof \Closure) {
+					return $target(...$args);
+				} else {
+					return $target->$method(...$args);
+				}
 			}
 			//not found
 			throw new \Exception("Method $method not found");

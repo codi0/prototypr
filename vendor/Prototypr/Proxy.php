@@ -7,9 +7,11 @@ class Proxy {
 	use ExtendTrait;
 
 	protected $__target;
+	protected $__kernel;
 
-	public function __construct($target) {
+	public function __construct($target, $kernel=null) {
 		$this->__target = $target;
+		$this->__kernel = $kernel ?: prototypr();
 	}
 
 	public function __isset($key) {
