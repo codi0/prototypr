@@ -3,3 +3,7 @@
 	min-width: 320px;
 	padding: 10px;
 }
+
+.form-wrap .title {
+	margin: 15px 0;
+}

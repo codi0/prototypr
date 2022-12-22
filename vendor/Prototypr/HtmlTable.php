@@ -8,10 +8,12 @@ class HtmlTable {
 
 	protected $name = '';
 	protected $attr = [];
-
 	protected $columns = [];
 	protected $data = [];
+
 	protected $filters = [];
+	protected $html = [ 'before' => [], 'after' => [] ];
+	protected $notFoundMsg = 'No {name} records found';
 
 	protected $sortColumn = 'id';
 	protected $sortAsc = true;
@@ -22,10 +24,6 @@ class HtmlTable {
 	public static function factory($name, array $opts = []) {
 		//create instance?
 		if(!isset(self::$instances[$name])) {
-			//format opts?
-			if($opts && !isset($opts['data'])) {
-				$opts = [ 'data' => $opts ];
-			}
 			//set name
 			$opts['name'] = $name;
 			//create object
@@ -39,34 +37,69 @@ class HtmlTable {
 		return $this->render();
 	}
 
-	public function name($name = null) {
+	public function name($name=null) {
 		//set name?
-		if($name) {
-			//update prop
+		if(!empty($name)) {
 			$this->name = $name;
-			//chain it
 			return $this;
 		}
 		//return
 		return $this->name;
 	}
 
-	public function attr($key, $val = null) {
-		//set attr
-		if(is_array($key)) {
-			$attr = $key;
-		} else {
-			$attr = [ $key => $val ];
+	public function attr($key=null, $val=null) {
+		//get all?
+		if($key === null) {
+			return $this->attr;
 		}
-		//update attr
-		foreach($attr as $k => $v) {
-			$this->attr[$k] = $v;
+		//set all?
+		if(is_array($key)) {
+			//replace?
+			if($val === true) {
+				$this->attr = $key;
+			} else{
+				$this->attr = array_merge($this->attr, $key);
+			}
+			//chain it
+			return $this;
+		}
+		//set one?
+		if($val !== null) {
+			//set property
+			$this->attr[$key] = $val;
+			//chain it
+			return $this;
+		}
+		//get one
+		return isset($this->attr[$key]) ? $this->attr[$key] : null;
+	}
+
+	public function before($html, $after=false) {
+		//set vars
+		$position = $after ? 'after' : 'before';
+		//save html?
+		if($html = trim($html)) {
+			$this->html[$position][] = $html . "\n";
 		}
 		//chain it
 		return $this;
 	}
 
-	public function hasColumns() {
+	public function after($html) {
+		return $this->before($html, true);
+	}
+
+	public function notFoundMsg($msg=null) {
+		//set message?
+		if(!empty($msg)) {
+			$this->notFoundMsg = $msg;
+			return $this;
+		}
+		//return
+		return $this->notFoundMsg;
+	}
+
+	public function getColumns() {
 		//guess columns?
 		if(!$this->columns && $this->data) {
 			//get keys
@@ -78,35 +111,25 @@ class HtmlTable {
 			}
 		}
 		//return
-		return !!$this->columns;
+		return $this->columns;
 	}
 
-	public function columns(array $columns) {
-		//set columns
-		$this->columns = $columns;
-		//chain it
-		return $this;
-	}
-
-	public function data(array $data) {
-		//set data
-		$this->data = $data;
-		//chain it
-		return $this;
-	}
-
-	public function addColumn($key, $title) {
-		//guess columns
-		$this->hasColumns();
-		//add column
-		$this->columns[$key] = $title;
-		//chain it
-		return $this;
-	}
-
-	public function addRow(array $row) {
-		//add row
-		$this->data[] = $row;
+	public function setColumns(array $columns, $replace=true) {
+		//reset?
+		if($replace) {
+			$this->columns = [];
+		} else {
+			$this->getColumns();		
+		}
+		//add columns
+		foreach($columns as $key => $title) {
+			//use title as key?
+			if(is_numeric($key)) {
+				$key = str_replace(' ', '_', strtolower($title));
+			}
+			//add column
+			$this->columns[$key] = $title;
+		}
 		//chain it
 		return $this;
 	}
@@ -115,7 +138,7 @@ class HtmlTable {
 		//set vars
 		$newCols = [];
 		//guess columns
-		$this->hasColumns();
+		$this->getColumns();
 		//loop through keys
 		foreach($keys as $k) {
 			//column exists?
@@ -134,6 +157,47 @@ class HtmlTable {
 		return $this;
 	}
 
+	public function addColumn($key, $title=null) {
+		//format key?
+		if(!is_array($key)) {
+			//format key?
+			if($title === null) {
+				$title = $key;
+				$key = str_replace(' ', '_', strtolower($title));
+			}
+			//format as array
+			$key = [ $key => $title ];
+		}
+		//return
+		return $this->setColumns($key, false);
+	}
+
+	public function removeColumn($key) {
+		//remove column?
+		if(isset($this->columns[$key])) {
+			unset($this->columns[$key]);
+		}
+		//chain it
+		return $this;
+	}
+
+	public function getData() {
+		return $this->data;
+	}
+
+	public function setData(array $data, $replace=true) {
+		//reset?
+		if($replace) {
+			$this->data = [];
+		}
+		//add to data
+		foreach($data as $k => $v) {
+			$this->data[$k] = $v;
+		}
+		//chain it
+		return $this;
+	}
+
 	public function sortData($columnKey, $order) {
 		//set sort props
 		if(is_callable($columnKey)) {
@@ -146,17 +210,66 @@ class HtmlTable {
 		return $this;
 	}
 
-	public function filterCell($callback) {
+	public function addRow(array $row) {
+		//add row
+		$this->data[] = $row;
+		//chain it
+		return $this;
+	}
+
+	public function removeRow($key) {
+		//remove row?
+		if(isset($this->data[$key])) {
+			unset($this->data[$key]);
+		}
+		//chain it
+		return $this;
+	}
+
+	public function addRowAction($action, $url) {
+		//set vars
+		$url = urldecode($url);
+		//add column
+		$this->addColumn('Actions');
+		//filter cell
+		$this->filterCell('actions', function($html, $row) use($action, $url) {
+			//url placeholders
+			foreach($row as $k => $v) {
+				//format value?
+				if(!is_string($v) && !is_numeric($v)) {
+					$v = '';
+				}
+				//update url
+				$url = str_replace('{' . $k . '}', $v, $url);
+			}
+			//add action link
+			$html .= '<a href="' . $url . '">' . ucfirst($action) . '</a>' . "\n";
+			//return
+			return $html;
+		});
+		//return
+		return $this;
+	}
+
+	public function filterCell($column, $callback = null) {
+		//has callback?
+		if($callback === null) {
+			$callback = $column;
+			$column = null;
+		}
 		//add callback
-		$this->filters[] = $callback;
+		$this->filters[] = [
+			'column' => $column,
+			'callback' => $callback,
+		];
 		//chain it
 		return $this;
 	}
 
 	public function render() {
-		//can render?
-		if(!$this->hasColumns()) {
-			return '<div class="table-not-found">No data available to render table</div>';
+		//get columns?
+		if(!$this->columns) {
+			$this->getColumns();
 		}
 		//sort data?
 		if($this->sortCallback || $this->sortColumn) {
@@ -174,65 +287,77 @@ class HtmlTable {
 				}
 			});
 		}
+		//set vars
+		$html = '';
+		//set id attr
+		$this->attr['id'] = $this->name . '-table';
 		//reset data keys
 		$this->data = array_values($this->data);
-		//set id attr
-		$this->attr('id', $this->name . '-table');
-		//open table
-		$html = '<table' . Html::formatAttr($this->attr). '>' . "\n";
-		//open table head
-		$html .= '<thead>' . "\n";
-		//open columns
-		$html .= '<tr>';
-		//set columns
-		foreach($this->columns as $col => $cell) {
-			//filter cell value
-			foreach($this->filters as $cb) {
-				//execute filter
-				$tmp = call_user_func($cb, $coll, $this->columns, true);
-				//update value?
-				if($tmp !== null) {
-					$cell = $tmp;
-				}
-			}
-			//add cell
-			$html .= '<th key="' . $col . '">' . $cell . '</th>';
-		}
-		//close headers
-		$html .= '</tr>' . "\n";
-		//open table head
-		$html .= '</thead>' . "\n";
-		//open table body
-		$html .= '<tbody>' . "\n";
-		//loop through rows
-		for($i=0; $i < count($this->data); $i++) {
-			//get row
-			$row = $this->data[$i];
-			//open row
+		//open wrapper
+		$html .= '<div id="' . $this->name . '-table-wrap" class="table-wrap">' . "\n";
+		//add before table
+		$html .= implode("\n", $this->html['before']);
+		//has data?
+		if($this->data) {
+			//open table
+			$html .= '<table' . Html::formatAttr($this->attr). '>' . "\n";
+			//open table head
+			$html .= '<thead>' . "\n";
+			//open columns
 			$html .= '<tr>';
-			//loop through columns
-			foreach($this->columns as $col => $title) {
-				//get cell value
-				$cell = isset($row[$col]) ? $row[$col] : '';
-				//filter cell value
-				foreach($this->filters as $cb) {
-					//execute filter
-					$tmp = call_user_func($cb, $col, $row, false);
-					//update value?
-					if($tmp !== null) {
-						$cell = $tmp;
-					}
-				}
-				//add cell
-				$html .= '<td>' . str_replace("\n", "<br>", $this->printCell($cell)) . '</td>';
+			//set columns
+			foreach($this->columns as $col => $cell) {
+				$html .= '<th key="' . $col . '">' . $cell . '</th>';
 			}
-			//close row
+			//close headers
 			$html .= '</tr>' . "\n";
+			//open table head
+			$html .= '</thead>' . "\n";
+			//open table body
+			$html .= '<tbody>' . "\n";
+			//loop through rows
+			for($i=0; $i < count($this->data); $i++) {
+				//get row
+				$row = $this->data[$i];
+				//open row
+				$html .= '<tr>';
+				//loop through columns
+				foreach($this->columns as $col => $colTitle) {
+					//get cell value
+					$cell = isset($row[$col]) ? $row[$col] : '';
+					//get column position
+					$colPos = array_flip(array_keys($this->columns))[$col];
+					//filter cell value
+					foreach($this->filters as $filter) {
+						//skip filter?
+						if($filter['column'] && $filter['column'] !== $col) {
+							continue;
+						}
+						//execute filter
+						$tmp = call_user_func($filter['callback'], $cell, $row, $col, $colPos);
+						//update value?
+						if($tmp !== null) {
+							$cell = $tmp;
+						}
+					}
+					//add cell
+					$html .= '<td>' . str_replace("\n", "<br>", $this->printCell($cell)) . '</td>';
+				}
+				//close row
+				$html .= '</tr>' . "\n";
+			}
+			//close table body
+			$html .= '</tbody>' . "\n";
+			//close table
+			$html .= '</table>' . "\n";
+		} else {
+			//nothing to render
+			$html .= '<div class="table-not-found">' . str_replace('{name}', $this->name, $this->notFoundMsg) . '</div>';		
 		}
-		//close table body
-		$html .= '</tbody>' . "\n";
-		//close table
-		$html .= '</table>' . "\n";
+		//add after table
+		$html .= implode("\n", $this->html['after']);
+		//close table wrap
+		$html .= '</div>' . "\n";
 		//return
 		return $html;
 	}

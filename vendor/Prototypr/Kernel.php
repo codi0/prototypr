@@ -490,14 +490,32 @@ namespace Prototypr {
 				'query' => true,
 				'clean' => '',
 			], $opts);
-			//format path
+			//set vars
+			$query = [];
 			$path = $this->path($path, [ 'validate' => false, 'relative' => true ]);
 			$path = trim($path ?: $this->config['url']);
-			//remove query string?
-			if(!$opts['query']) {
-				$path = explode('?', $path, 2)[0];
-			} elseif(is_array($opts['query'])) {
-				$path .= (strpos($path, '?') !== false ? '&' : '?') . http_build_query($opts['query']);
+			//has query string?
+			if(strpos($path, '?') !== false) {
+				list($path, $query) = explode('?', $path, 2);
+				parse_str($query, $query);
+			}
+			//has query params?
+			if(is_array($opts['query'])) {
+				//process query params
+				foreach($opts['query'] as $k => $v) {
+					//add or remove?
+					if(is_string($v)) {
+						$query[$k] = $v;
+					} else if(isset($query[$k])) {
+						unset($query[$k]);
+					}
+				}
+			} else if($opts['query'] === false) {
+				$query = [];
+			}
+			//add query string?
+			if(!empty($query)) {
+				$path .= '?' . http_build_query($query);
 			}
 			//is relative url?
 			if($path[0] !== '/' && strpos($path, '://') === false) {

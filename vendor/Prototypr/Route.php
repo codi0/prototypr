@@ -55,7 +55,7 @@ class Route implements \ArrayAccess {
 			'content_types' => $this->contentTypes,
 			'auth' => !!$this->auth,
 			'public' => !!$this->public,
-			'input_schema' => $this->filterInputSchema($this->inputSchema, $method),
+			'input_schema' => self::filterInputSchema($this->inputSchema, $method),
 			'output_schema' => $this->outputSchema,
 		];
 	}
@@ -280,18 +280,17 @@ class Route implements \ArrayAccess {
 		return $input;
 	}
 
-	protected function filterInputSchema(array $input, $method) {
+	public static function filterInputSchema(array $input, $method) {
 		//set vars
 		$remove = [ 'rules', 'filters' ];
-		$filterMethod = $method && in_array($method, $this->methods);
 		//loop through array
 		foreach($input as $field => $meta) {
 			//filter method?
-			if($filterMethod) {
+			if($method) {
 				//has children?
 				if(isset($meta['children']) && $meta['children']) {
 					//compile children
-					$input[$field]['children'] = $this->filterInputSchema($meta['children'], $method);
+					$input[$field]['children'] = self::filterInputSchema($meta['children'], $method);
 					//remove field?
 					if(!$input[$field]['children']) {
 						unset($input[$field]);

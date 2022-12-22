@@ -285,6 +285,8 @@ class Todos extends \Prototypr\Route {
 		if(!isset($record['id']) || !$record['id']) {
 			$record['id'] = count($json) + 1;
 		}
+		//put ID first in array
+		$record = [ 'id' => $record['id'] ] + $record;
 		//get old record
 		$old = isset($json[$record['id']]) ? $json[$record['id']] : [];
 		//add record

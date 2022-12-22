@@ -11,6 +11,7 @@ class HtmlForm {
 	protected $attr = [];
 	protected $fields = [];
 	protected $values = [];
+	protected $html = [ 'before' => [], 'after' => [] ];
 
 	protected $model = [];
 	protected $errors = [];
@@ -98,15 +99,46 @@ class HtmlForm {
 		return $this->model;
 	}
 
-	public function attr($key, $val=null) {
-		//is array?
+	public function attr($key=null, $val=null) {
+		//get all?
+		if($key === null) {
+			return $this->attr;
+		}
+		//set all?
 		if(is_array($key)) {
-			$this->attr = array_merge($this->attr, $key);
-		} elseif($val !== null) {
+			//replace?
+			if($val === true) {
+				$this->attr = $key;
+			} else{
+				$this->attr = array_merge($this->attr, $key);
+			}
+			//chain it
+			return $this;
+		}
+		//set one?
+		if($val !== null) {
+			//set property
 			$this->attr[$key] = $val;
+			//chain it
+			return $this;
+		}
+		//get one
+		return isset($this->attr[$key]) ? $this->attr[$key] : null;
+	}
+
+	public function before($html, $after=false) {
+		//set vars
+		$position = $after ? 'after' : 'before';
+		//save html?
+		if($html = trim($html)) {
+			$this->html[$position][] = $html . "\n";
 		}
 		//chain it
 		return $this;
+	}
+
+	public function after($html) {
+		return $this->before($html, true);
 	}
 
 	public function input($name, array $config=[]) {
@@ -147,14 +179,6 @@ class HtmlForm {
 		return $this->input($name, $config);
 	}
 
-	public function inline($tag, $code) {
-		return $this->input('html', [
-			'wrap' => false,
-			'label' => '',
-			'html' => "<$tag>\n$code\n</$tag>\n",
-		]);
-	}
-
 	public function isValid() {
 		//already run?
 		if($this->isValid !== null) {
@@ -163,7 +187,7 @@ class HtmlForm {
 		//form data
 		$fields = [];
 		$values = [];
-		$method = $this->attr['method'] === 'get' ? 'get' : 'post';
+		$method = ($this->attr['method'] === 'get') ? 'get' : 'post';
 		$global = $GLOBALS['_' . strtoupper($method)];
 		$formId = $this->kernel->input('id');
 		//model data
@@ -328,11 +352,15 @@ class HtmlForm {
 		$modelData = $this->getModelData();
 		//reset props
 		$this->fieldset = '';
+		//open wrapper
+		$html .= '<div id="' . $this->attr['id'] . '-wrap" class="form-wrap">' . "\n";
+		//add before form
+		$html .= implode("\n", $this->html['before']);
 		//open form
 		$html .= '<form' . Html::formatAttr($this->attr) . '>' . "\n";
 		//success message?
 		if($this->message) {
-			if($this->isValid || (is_null($this->isValid) && $this->kernel->input('get.success') == 'true')) {
+			if($this->isValid || (is_null($this->isValid) && $this->kernel->input('GET.success') == 'true')) {
 				$html .= '<div class="notice info">' . $this->message . '</div>' . "\n";
 			}
 		}
@@ -364,6 +392,7 @@ class HtmlForm {
 				'name' => $name,
 				'type' => 'text',
 				'value' => null,
+				'required' => false,
 				'placeholder' => '',
 				'label' => str_replace('_', ' ', ucfirst($name)),
 				'error' => isset($this->errors[$name]) ? $this->errors[$name] : [],
@@ -408,7 +437,7 @@ class HtmlForm {
 				$classes  = 'field ' . $opts['type'];
 				$classes .= ($opts['type'] !== $name) ? ' ' . $name : '';
 				$classes .= $opts['error'] ? ' has-error' : '';
-				$classes .= (stripos($field, '<label') === false) ? ' no-label' : '';
+				$classes .= !$opts['label'] ? ' no-label' : '';
 				//add html
 				$field .= '<div class="' . preg_replace('/\_|\./', '-', $classes) . '">' . "\n";
 			}
@@ -467,6 +496,10 @@ class HtmlForm {
 			$html .= 'document.getElementById("' . $this->name . '-form").scrollIntoView();' . "\n";
 			$html .- '</script>' . "\n";
 		}
+		//add after table
+		$html .= implode("\n", $this->html['after']);
+		//close table wrap
+		$html .= '</div>' . "\n";
 		//return
 		return $html;
 	}
