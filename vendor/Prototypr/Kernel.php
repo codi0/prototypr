@@ -1815,7 +1815,7 @@ namespace Prototypr {
 				$target = $this->__target();
 			}
 			//proxy.call event?
-			if(property_exists($this, '__kernel') && $this->__kernel) {
+			if($target && property_exists($this, '__kernel') && $this->__kernel) {
 				//execute event
 				$res = $this->__kernel->event('proxy.call', [
 					'target' => $target,
