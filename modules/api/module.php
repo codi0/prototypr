@@ -12,6 +12,9 @@
 $this->facade('App', $this);
 
 
-//Init: api service
-//Api routes defined in /vendor/App/Api.php module file
+//API: todos endpoint
+$this->api->addEndpoint('App\Api\V1\Todos');
+
+
+//API: Init
 $this->api->init();

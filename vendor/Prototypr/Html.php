@@ -83,13 +83,14 @@ class Html {
 			'type' => 'checkbox',
 			'options' => [ $name ],
 		], $opts);
-		//format value
-		$value = (string) $value;
+		//set vars
+		$isMulti = (count($opts['options']) > 1) && ($opts['type'] !== 'radio');
+		$value = $isMulti ? ((array) $value ?: []) : ((string) $value ?: '');
 		//open html
 		$html = '<span class="' . $opts['type'] . '-group">';
 		//loop through options
 		foreach($opts['options'] as $key => $label) {
-			//set name
+			//set vars
 			$n = $name;
 			$id = $name . '-' . $key;
 			//set value
@@ -99,7 +100,7 @@ class Html {
 				$v = '1';
 			}
 			//is array?
-			if(count($opts) > 1 && $opts['type'] !== 'radio') {
+			if($isMulti) {
 				$n .= '[' . $key . ']';
 				$checked = ((isset($value[$key]) && $value[$key]) || $value === $key) ? ' checked' : '';
 			} else {

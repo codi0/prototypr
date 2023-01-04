@@ -42,11 +42,12 @@ class Api {
 		],
 	];
 
-	public function init(array $routes=[]) {
+	public function init($basePath=null) {
 		//has run?
 		if(!$this->hasRun) {
 			//update flag
 			$this->hasRun = true;
+			$this->basePath = $basePath ?: $this->basePath;
 			//check for schema request
 			$segs = explode('/', $this->kernel->config('pathinfo'));
 			$lastSeg = explode('.', array_pop($segs), 2);
@@ -163,7 +164,7 @@ class Api {
 
 	public function addEndpoint($path, $callback=null, array $route=[]) {
 		//add directly?
-		if(is_array($path) || is_object($path)) {
+		if($callback === null) {
 			$route = $path;
 		} else {
 			//set vars
@@ -221,21 +222,32 @@ class Api {
 			}
 		}
 		//bind callback to $this
-		$cb = $this->kernel->bind($route['callback'], $this);
+		$cb = $this->kernel->bind($route['callback']);
 		//wrap callback
-		$route['callback'] = function() use($cb, $ctx) {
+		$route['callback'] = function($params=[]) use($cb, $ctx) {
 			//buffer
 			ob_start();
 			//execute callback
-			$res = call_user_func($cb);
+			try {
+				$res = call_user_func($cb, $params);
+			} catch(\Exception $e) {
+				//get error code
+				$code = isset($e->code) ? intval($e->code) : 0;
+				//set response
+				$res = [ 'code' => $code ?: 500 ];
+				//add error message?
+				if($res['code'] < 500) {
+					$res['errors'] = [ $e->getMessage() ];
+				}
+			}
 			//display response?
 			if($echo = ob_get_clean()) {
 				echo $echo;
 				return;
 			}
 			//valid response?
-			if(!is_array($res)) {
-				throw new \Exception("API endpoint route must return an array");
+			if(!$res || !is_array($res)) {
+				$res = [ 'code' => 404 ];
 			}
 			//respond
 			return $ctx->respond($res);

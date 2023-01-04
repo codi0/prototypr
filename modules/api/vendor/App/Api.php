@@ -5,10 +5,6 @@ namespace App;
 class Api extends \Prototypr\Api {
 
 	protected $basePath = '/api/';
-	
-	protected $routes = [
-		'App\Api\V1\Todos',
-	];
 
 	public function getKeyHeader() {
 		//TO-DO: define scheme for retrieving api key here

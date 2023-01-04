@@ -86,6 +86,7 @@ class View {
 			$data = array_merge([
 				'js' => [],
 				'meta' => [],
+				'assets' => [],
 				'theme' => $this->kernel->config('theme'),
 			], $data);
 			//set theme path?
@@ -114,7 +115,7 @@ class View {
 			//set default title?
 			if(!isset($data['meta']['title']) || !$data['meta']['title']) {
 				$route = isset($data['js']['route']) ? $data['js']['route'] : '';
-				$data['meta']['title'] = str_replace('/', ' > ', ucfirst($route));
+				$data['meta']['title'] = str_replace([ '/', '-' ], [ ' > ', ' ' ], ucfirst($route));
 			}
 			//use theme?
 			if($themePath) {
@@ -131,6 +132,13 @@ class View {
 					foreach($matches as $file) {
 						require_once($file);
 					}
+				}
+			}
+			//queue custom assets
+			foreach($data['assets'] as $asset) {
+				//file extension found?
+				if($ext = pathinfo($asset, PATHINFO_EXTENSION)) {
+					$this->queue($ext, $asset);
 				}
 			}
 		}

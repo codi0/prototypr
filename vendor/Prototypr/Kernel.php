@@ -1637,7 +1637,13 @@ namespace Prototypr {
 			$output = trim(ob_get_clean());
 			//show debug bar?
 			if($this->isDebug()) {
-				$output = str_replace('</body>', $this->debug(true) . "\n" . '</body>', $output);
+				//get headers
+				$headers = preg_replace("/\s+/", "", implode("\n", headers_list()));
+				//is valid html request?
+				if(stripos($headers, 'content-type') === false || stripos($headers, 'content-type:text/html') !== false) {
+					$debugBar = '<style>#debug-bar + * { padding-bottom: 37px; }</style>' . "\n" . $this->debug(true);
+					$output = preg_replace('/<body(.*)>/U', '<body$1>' . "\n" . $debugBar, $output);
+				}
 			}
 			//set response code?
 			if($code > 0) {
@@ -1675,7 +1681,7 @@ namespace Prototypr {
 				return $data;
 			}
 			//create html
-			$html  = '<div id="debug-bar" style="width:100%; font-size:12px; text-align:left; padding:10px; margin-top:20px; background:#eee; position:fixed; bottom:0;">' . "\n";
+			$html  = '<div id="debug-bar" style="width:100%; font-size:12px; text-align:left; padding:10px; background:#eee; position:fixed; bottom:0;">' . "\n";
 			$html .= '<div><b>Debug:</b> Time: ' . $data['time'] . ' | Mem: ' . $data['mem'] . ' | Peak: ' . $data['mem_peak'] . ' | Queries: ' . $data['queries'] . '</div>' . "\n";
 			//show db queries?
 			if($data['queries_log']) {
@@ -1685,7 +1691,7 @@ namespace Prototypr {
 				}
 				$html .= '</ol>' . "\n";
 			}
-			$html .= '</div>' . "\n";
+			$html .= '</div>';
 			//return
 			return $html;
 		}
@@ -1808,6 +1814,8 @@ namespace Prototypr {
 		protected $__calls = [];
 
 		public function __call($method, array $args) {
+			//set vars
+			$target = null;
 			//find target
 			if(isset($this->__calls[$method])) {
 				$target = $this->__calls[$method];

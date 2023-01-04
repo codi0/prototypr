@@ -126,6 +126,18 @@ class HtmlForm {
 		return isset($this->attr[$key]) ? $this->attr[$key] : null;
 	}
 
+	public function message($message=null) {
+		//get message?
+		if($message !== null) {
+			//set property
+			$this->message = $message ?: '';
+			//chain it
+			return $this;
+		}
+		//return
+		return $this->message;
+	}
+
 	public function before($html, $after=false) {
 		//set vars
 		$position = $after ? 'after' : 'before';
@@ -224,7 +236,7 @@ class HtmlForm {
 			}
 			//set vars
 			$rules = [];
-			$filter = [];
+			$filters = [];
 			$override = isset($opts['override']) && $opts['override'];
 			//setup validators
 			foreach([ 'filters', 'rules' ] as $k) {
@@ -255,7 +267,7 @@ class HtmlForm {
 				$this->errors[$name][] = $error;
 			}
 			//skip empty?
-			if($values[$name] === '' && in_array('skipEmpty', $validate)) {
+			if($values[$name] === '' && in_array('skipEmpty', $rules)) {
 				$values[$name] = null;
 			}
 		}

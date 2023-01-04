@@ -33,16 +33,20 @@ $this->route('todos', function() {
 		'title' => 'Todo list',
 		'schema_url' => $endpoint . '/schema', //optionally set the schema URL, if different from the main endpoint
 	]);
+	//add custom css
+	$output->before('<style>.form-wrap .title { margin: 15px 0; }</style>');
 	//template
-	$this->tpl('ui', [
+	$this->tpl('output', [
 		'output' => $output,
 	]);
 });
 
 //Event: Example DOM manipulation
 $this->event('app.html', function($html) {
+	//get route
+	$route = $this->config('route');
 	//is home page?
-	if(!$this->config('route')->path) {
+	if($route && !$route->path) {
 		//load DOM
 		$this->dom->load($html);
 		//add child
