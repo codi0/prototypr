@@ -141,6 +141,10 @@ class View {
 					$this->queue($ext, $asset);
 				}
 			}
+			//Event: theme.ready
+			if($themePath) {
+				$this->kernel->event('theme.ready');
+			}
 		}
 		//add default ext?
 		if(strpos($tplPath, '.') === false) {
