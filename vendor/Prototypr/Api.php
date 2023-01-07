@@ -247,7 +247,7 @@ class Api {
 			}
 			//valid response?
 			if(!$res || !is_array($res)) {
-				$res = [ 'code' => 404 ];
+				$res = [ 'code' => 500 ];
 			}
 			//respond
 			return $ctx->respond($res);

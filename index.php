@@ -18,8 +18,10 @@
 **/
 
 
-//load kernel
-require_once(__DIR__ . '/vendor/Prototypr/Kernel.php');
+//load kernel?
+if(!class_exists('Prototypr\Kernel', false)) {
+	require_once(__DIR__ . '/vendor/Prototypr/Kernel.php');
+}
 
 //launch app
 return prototypr([
@@ -27,7 +29,7 @@ return prototypr([
 	'config' => [
 	
 		//App name
-		'name' => 'Demo App',
+		'name' => "",
 
 		//Set app version number, triggering app.upgrade event when version updated
 		'version' => NULL,

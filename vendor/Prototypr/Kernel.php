@@ -16,8 +16,6 @@ namespace Prototypr {
 	
 		use ExtendTrait;
 
-		const VERSION = '1.0.1';
-
 		private static $_instances = [];
 
 		private $_startMem = 0;
@@ -179,6 +177,10 @@ namespace Prototypr {
 			//format base url
 			$this->config['base_url'] = $this->config['base_url'] ?: ($host . '/' . trim($scriptBase, '/'));
 			$this->config['base_url'] = rtrim($this->config['base_url'], '/') . '/';
+			//set app name?
+			if(!$this->config['name']) {
+				$this->config['name'] = ucfirst(explode('.', $_SERVER['HTTP_HOST'])[0]);
+			}
 			//script included?
 			if($this->config['included']) {
 				$this->config['autorun'] = null;
@@ -1295,15 +1297,17 @@ namespace Prototypr {
 		public function mail($to, $subject, $body, array $opts=[]) {
 			//set vars
 			$headers = '';
+			$separator = md5(uniqid(time()));
+			$to = is_string($to) ? explode(',', $to) : $to;
 			//set defaults
 			$opts = array_merge([
 				'subject' => trim($subject),
 				'body' => trim($body),
-				'to' => trim($to),
-				'to_name' => '',
+				'to' => array_map('trim', $to),
 				'from' => $this->config('mail_from') ?: 'no-reply@' . $this->input('SERVER.HTTP_HOST'),
 				'from_name' => $this->config('mail_name') ?: $this->config['name'],
 				'headers' => [],
+				'attachments' => [],
 				'html' => null,
 			], $opts);
 			//is html?
@@ -1325,7 +1329,6 @@ namespace Prototypr {
 			$opts['headers'] = array_merge([
 				'From' => $opts['from_name'] ? ($opts['from_name'] . ' <' . $opts['from'] . '>') : $opts['from'],
 				'Reply-To' => $opts['from'],
-				'Content-Type' => $opts['html'] ? 'text/html; charset=utf-8' : 'text/plain; charset=utf-8',
 				'MIME-Version' => $opts['html'] ? '1.0' : '',
 			], $opts['headers']);
 			//mail event
@@ -1334,22 +1337,44 @@ namespace Prototypr {
 			if(!is_array($opts)) {
 				return !!$opts;
 			}
+			//format to emails?
+			if(is_array($opts['to'])) {
+				$opts['to'] = implode(', ', $opts['to']);
+			}
+			//valid from email?
+			if(!filter_var($opts['from'], FILTER_VALIDATE_EMAIL)) {
+				throw new \Exception("Invalid From email address");
+			}
+			//force mixed content type
+			$opts['headers']['Content-Type'] = 'multipart/mixed; boundary="' . $separator . '"';
 			//convert headers to string
 			foreach($opts['headers'] as $k => $v) {
 				if(!empty($v)) {
 					$headers .= ucfirst($k) . ': ' . $v . "\r\n";
 				}
 			}
-			//valid from mail?
-			if(!filter_var($opts['from'], FILTER_VALIDATE_EMAIL)) {
-				throw new \Exception("From email not set");
+			//open body
+			$body  = '--' . $separator . "\r\n";
+			$body .= 'Content-type: text/' . ($opts['html'] ? 'html' : 'plain') . '; charset=utf-8' . "\r\n\r\n";
+			$body .= $opts['body'] . "\r\n";
+			//add attachments
+			foreach($opts['attachments'] as $k => $v) {
+				$body .= '--' . $separator . "\r\n";
+				$body .= 'Content-Type: application/octet-stream; name="' . $k . '"' . "\r\n";
+				$body .= 'Content-Disposition: attachment; filename="' . $k . '"' . "\r\n";
+				$body .= 'Content-Transfer-Encoding: base64' . "\r\n\r\n";
+				$body .= base64_encode($v) . "\r\n";
 			}
+			//close body
+			$body .= '--' . $separator . '--';
 			//use safe mode?
 			if(ini_get('safe_mode')) {
-				return mail($opts['to'], $opts['subject'], $opts['body'], $headers);
+				return mail($opts['to'], $opts['subject'], $body, $headers);
 			} else {
-				return mail($opts['to'], $opts['subject'], $opts['body'], $headers, '-f' . $opts['from']);
+				return mail($opts['to'], $opts['subject'], $body, $headers, '-f' . $opts['from']);
 			}
+			//return
+			return $result;
 		}
 
 		public function form($name, $method='post', $action='') {
