@@ -1666,8 +1666,7 @@ namespace Prototypr {
 				$headers = preg_replace("/\s+/", "", implode("\n", headers_list()));
 				//is valid html request?
 				if(stripos($headers, 'content-type') === false || stripos($headers, 'content-type:text/html') !== false) {
-					$debugBar = '<style>#debug-bar + * { padding-bottom: 37px; }</style>' . "\n" . $this->debug(true);
-					$output = preg_replace('/<body(.*)>/U', '<body$1>' . "\n" . $debugBar, $output);
+					$output = str_replace('</body>', $this->debug(true) . '</body>', $output);
 				}
 			}
 			//set response code?
@@ -1706,15 +1705,19 @@ namespace Prototypr {
 				return $data;
 			}
 			//create html
-			$html  = '<div id="debug-bar" style="width:100%; font-size:12px; text-align:left; padding:10px; background:#eee; position:fixed; bottom:0;">' . "\n";
-			$html .= '<div><b>Debug:</b> Time: ' . $data['time'] . ' | Mem: ' . $data['mem'] . ' | Peak: ' . $data['mem_peak'] . ' | Queries: ' . $data['queries'] . '</div>' . "\n";
-			//show db queries?
+			$html  = '<div id="debug-bar" style="font-size:13px; padding:10px; margin-top:15px; background:#dfdfdf;">';
+			$html .= '<div class="heading" onclick="return this.nextSibling.style.display=\'block\';">';
+			$html .= '<span style="font-weight:bold;">Debug bar:</span> &nbsp;' . $data['time'] . ' &nbsp;|&nbsp; ' . $data['mem'] . ' &nbsp;|&nbsp; ';
+			$html .= '<span style="color:blue;cursor:pointer;">' . $data['queries'] . ' queries &raquo;</span>';
+			$html .= '</div>';
 			if($data['queries_log']) {
-				$html .= '<ol style="margin:10px 0 0 0; padding-left:15px;">' . "\n";
+				$html .= '<ol class="queries" style="padding-left:20px; display:none;">';
 				foreach($data['queries_log'] as $q) {
-					$html .= '<li style="margin-top:3px;">' . $q . '</li>' . "\n";
+					$html .= '<li style="margin:8px 0 0 0; line-height:1.1;">' . $q . '</li>';
 				}
-				$html .= '</ol>' . "\n";
+				$html .= '</ol>';
+			} else {
+				$html .= '<div class="no-queries" style="display:none;">Query log empty</div>';
 			}
 			$html .= '</div>';
 			//return

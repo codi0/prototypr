@@ -50,17 +50,36 @@ class Db extends \PDO {
 	}
 
 	public function schema($schema) {
-		//load file?
+		//set vars
+		$parts = [];
+		//is path?
 		if(strpos($schema, ' ') === false) {
-			$schema = file_get_contents($path);
+			//is file?
+			if(strpos($schema, '.') !== false) {
+				$files = [ $schema ];
+			} else {
+				$files = glob(rtrim($schema, '/') . '/*.sql');
+			}
+			//loop through files
+			foreach($files as $file) {
+				//has content?
+				if($content = file_get_contents($file)) {
+					$parts[] = $content;
+				}
+			}
+		} else {
+			$parts[] = $schema;
 		}
-		//loop through queries
-		foreach(explode(';', $schema) as $query) {
-			//trim query
-			$query = trim($query);
-			//execute query?
-			if(!empty($query)) {
-				$this->query($query);
+		//loop through parts
+		foreach($parts as $part) {
+			//loop through queries
+			foreach(explode(';', $part) as $query) {
+				//trim query
+				$query = trim($query);
+				//execute query?
+				if(!empty($query)) {
+					$this->query($query);
+				}
 			}
 		}
 		//return
@@ -104,8 +123,14 @@ class Db extends \PDO {
 	public function get_var($query, $column_offset = 0, $row_offset = 0) {
 		//set vars
 		$res = NULL;
+		$params = [];
+		//has params?
+		if(is_array($column_offset)) {
+			$params = $column_offset;
+			$column_offset = 0;
+		}
 		//run query
-		if($s = $this->query($query)) {
+		if($s = $this->query($query, $params)) {
 			$res = $s->fetchColumn($column_offset);
 		}
 		//set num rows
@@ -117,8 +142,14 @@ class Db extends \PDO {
 	public function get_row($query, $output_type = NULL, $row_offset = 0) {
 		//set vars
 		$res = NULL;
+		$params = [];
+		//has params?
+		if(is_array($output_type)) {
+			$params = $output_type;
+			$output_type = NULL;
+		}
 		//run query
-		if($s = $this->query($query)) {
+		if($s = $this->query($query, $params)) {
 			$res = $s->fetch(\PDO::FETCH_OBJ, \PDO::FETCH_ORI_ABS, $row_offset);
 		}
 		//set num rows
@@ -130,8 +161,14 @@ class Db extends \PDO {
 	public function get_col($query, $column_offset = 0) {
 		//set vars
 		$res = NULL;
+		$params = [];
+		//has params?
+		if(is_array($column_offset)) {
+			$params = $column_offset;
+			$column_offset = 0;
+		}
 		//run query
-		if($s = $this->query($query)) {
+		if($s = $this->query($query, $params)) {
 			$res = $s->fetchAll(\PDO::FETCH_COLUMN, $column_offset);
 		}
 		//set num rows
@@ -143,8 +180,14 @@ class Db extends \PDO {
 	public function get_results($query, $output_type = NULL) {
 		//set vars
 		$res = NULL;
+		$params = [];
+		//has params?
+		if(is_array($output_type)) {
+			$params = $output_type;
+			$output_type = NULL;
+		}
 		//run query
-		if($s = $this->query($query)) {
+		if($s = $this->query($query, $params)) {
 			$res = $s->fetchAll(\PDO::FETCH_OBJ);
 		}
 		//set num rows
@@ -169,7 +212,8 @@ class Db extends \PDO {
 		}
 		//cache params?
 		if($statement && is_array($options)) {
-			$statement->params = array_merge(isset($statement->params) ? $statement->params : [], $options);
+			$statement->params = isset($statement->params) ? $statement->params : [];
+			$statement->params = array_merge($statement->params, $options);
 		}
 		//return
 		return $statement;
@@ -184,10 +228,16 @@ class Db extends \PDO {
 		//execute?
 		if(is_object($s)) {
 			//merge params
-			$params = array_merge(isset($s->params) ? $s->params : [], $params);
+			$params = isset($s->params) ? $s->params : $params;
 			//convert params to values?
 			if(strpos($s->queryString, '?') !== false && strpos($s->queryString, ':') === false) {
 				$params = array_values($params);
+			}
+			//json encode params
+			foreach($params as $k => $v) {
+				if(is_array($v)) {
+					$params[$k] = json_encode($v);
+				}
 			}
 			//execute
 			try {
@@ -226,6 +276,19 @@ class Db extends \PDO {
 		$fieldsSql = implode(', ', $fields);
 		$valuesSql = implode(', ', array_map(function($i) { return ':' . $i; }, $fields));
 		$sql = "REPLACE INTO $table ($fieldsSql) VALUES ($valuesSql)";
+		//execute query
+		$s = $this->query($sql, $data);
+		//return
+		return $s ? $this->rows_affected : false;
+	}
+
+	public function upsert($table, array $data, $format = NULL) {
+		//set vars
+		$fields = array_keys($data);
+		$fieldsSql = implode(', ', $fields);
+		$valuesSql = implode(', ', array_map(function($i) { return ':' . $i; }, $fields));
+		$updateSql = $this->params2sql($data, ', ');
+		$sql = "INSERT INTO $table ($fieldsSql) VALUES ($valuesSql) ON DUPLICATE KEY UPDATE $updateSql";
 		//execute query
 		$s = $this->query($sql, $data);
 		//return

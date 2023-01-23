@@ -225,32 +225,53 @@ class Api {
 		$cb = $this->kernel->bind($route['callback']);
 		//wrap callback
 		$route['callback'] = function($params=[]) use($cb, $ctx) {
+			//set vars
+			$code = 0;
+			$errors = [];
+			$data = null;
 			//buffer
 			ob_start();
-			//execute callback
+			//begin
 			try {
+				//execute callback
 				$res = call_user_func($cb, $params);
-			} catch(\Exception $e) {
-				//get error code
-				$code = isset($e->code) ? intval($e->code) : 0;
-				//set response
-				$res = [ 'code' => $code ?: 500 ];
-				//add error message?
-				if($res['code'] < 500) {
-					$res['errors'] = [ $e->getMessage() ];
+				//is array?
+				if(is_array($res)) {
+					//get vars
+					foreach([ 'code', 'errors', 'data' ] as $k) {
+						if(isset($res[$k]) && $res[$k]) {
+							$$k = $res[$k];
+						}
+					}
 				}
+				//set data
+				if(!$code && !$errors && !$data) {
+					$data = $res;
+				}
+			} catch(\Exception $e) {
+				//update error code?
+				if($c = $e->getCode()) {
+					if($c >= 100 && $c < 600) {
+						$code = intval($c);
+					}
+				}
+				//set error code?
+				if(!$code && !$errors) {
+					$code = 500;
+				}
+				//add error?
+				if($code < 500 || $this->isDebug()) {
+					$errors[] = $e->getMessage();
+				}
+				//log exception
+				$this->logException($e, false);
 			}
-			//display response?
-			if($echo = ob_get_clean()) {
-				echo $echo;
-				return;
-			}
-			//valid response?
-			if(!$res || !is_array($res)) {
-				$res = [ 'code' => 500 ];
-			}
-			//respond
-			return $ctx->respond($res);
+			//create response
+			return $ctx->respond([
+				'code' => $code ? $code : ($errors ? 400 : ($data ? 200 : 500)),
+				'errors' => $errors,
+				'data' => $data,
+			]);
 		};
 		//format auth?
 		if($route['auth'] === true) {

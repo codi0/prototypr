@@ -51,6 +51,12 @@ class Platform {
 			//update base url
 			$file = $this->kernel->config('base_dir') . '/index.php';
 			$this->kernel->config('base_url', plugin_dir_url($file));
+			//register shutdown function
+			register_shutdown_function($this->kernel->bind(function() {
+				if($error = $GLOBALS['wpdb']->last_error) {
+					$this->log('errors', '$wpdb error: ' . strip_tags($error));
+				}
+			}));
 		} else {
 			//set vars
 			$wpcPath = explode('/wp-content/', __FILE__)[0] . '/wp-config.php';
