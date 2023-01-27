@@ -206,7 +206,7 @@ class Db extends \PDO {
 		//needs preparing?
 		if(!is_object($statement)) {
 			//standardise placeholder format
-			$statement = preg_replace("/(%[sdf])(\s|\"|\'|\)|$)/i", "?$2", $statement);
+			$statement = preg_replace("/(%[sdf])(\s|\"|\'|\)|\,|$)/i", "?$2", $statement);
 			//call parent
 			$statement = parent::prepare($statement);
 		}
