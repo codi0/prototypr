@@ -260,37 +260,40 @@ class Db extends \PDO {
 
 	public function insert($table, array $data, $format = NULL) {
 		//set vars
-		$fields = array_keys($data);
-		$fieldsSql = implode(', ', $fields);
-		$valuesSql = implode(', ', array_map(function($i) { return ':' . $i; }, $fields));
-		$sql = "INSERT INTO $table ($fieldsSql) VALUES ($valuesSql)";
+		$params = [];
+		$fieldsSql = $this->arr2fields($data);
+		$valuesSql = $this->arr2params($data, $params);		
+		//create sql
+		$sql = "INSERT INTO `$table` ($fieldsSql) VALUES ($valuesSql)";
 		//execute query
-		$s = $this->query($sql, $data);
+		$s = $this->query($sql, $params);
 		//return
 		return $s ? $this->rows_affected : false;
 	}
 
 	public function replace($table, array $data, $format = NULL) {
 		//set vars
-		$fields = array_keys($data);
-		$fieldsSql = implode(', ', $fields);
-		$valuesSql = implode(', ', array_map(function($i) { return ':' . $i; }, $fields));
-		$sql = "REPLACE INTO $table ($fieldsSql) VALUES ($valuesSql)";
+		$params = [];
+		$fieldsSql = $this->arr2fields($data);
+		$valuesSql = $this->arr2params($data, $params);
+		//create sql
+		$sql = "REPLACE INTO `$table` ($fieldsSql) VALUES ($valuesSql)";
 		//execute query
-		$s = $this->query($sql, $data);
+		$s = $this->query($sql, $params);
 		//return
 		return $s ? $this->rows_affected : false;
 	}
 
 	public function upsert($table, array $data, $format = NULL) {
 		//set vars
-		$fields = array_keys($data);
-		$fieldsSql = implode(', ', $fields);
-		$valuesSql = implode(', ', array_map(function($i) { return ':' . $i; }, $fields));
-		$updateSql = $this->params2sql($data, ', ');
-		$sql = "INSERT INTO $table ($fieldsSql) VALUES ($valuesSql) ON DUPLICATE KEY UPDATE $updateSql";
+		$params = [];
+		$fieldsSql = $this->arr2fields($data);
+		$valuesSql = $this->arr2params($data);
+		$updateSql = $this->arr2where($data, ', ', $params);
+		//create sql
+		$sql = "INSERT INTO `$table` ($fieldsSql) VALUES ($valuesSql) ON DUPLICATE KEY UPDATE $updateSql";
 		//execute query
-		$s = $this->query($sql, $data);
+		$s = $this->query($sql, $params);
 		//return
 		return $s ? $this->rows_affected : false;
 	}
@@ -298,9 +301,10 @@ class Db extends \PDO {
 	public function update($table, array $data, array $where, $format = NULL, $where_format = NULL) {
 		//set vars
 		$params = [];
-		$setSql = $this->params2sql($data, ', ', $params);
-		$whereSql = $this->params2sql($where, ' AND ', $params);
-		$sql = "UPDATE $table SET $setSql WHERE $whereSql";
+		$setSql = $this->arr2where($data, ', ', $params);
+		$whereSql = $this->arr2where($where, ' AND ', $params);
+		//create sql
+		$sql = "UPDATE `$table` SET $setSql WHERE $whereSql";
 		//execute query
 		$s = $this->query($sql, $params);
 		//return
@@ -309,22 +313,48 @@ class Db extends \PDO {
 
 	public function delete($table, array $where, $where_format = NULL) {
 		//set vars
-		$whereSql = $this->params2sql($where, ' AND ');
-		$sql = "DELETE FROM $table WHERE $whereSql";
+		$params = [];
+		$whereSql = $this->arr2where($where, ' AND ', $params);
+		//create sql
+		$sql = "DELETE FROM `$table` WHERE $whereSql";
 		//execute query
-		$s = $this->query($sql, $where);
+		$s = $this->query($sql, $params);
 		//return
 		return $s ? $this->rows_affected : false;
 	}
 
-	protected function params2sql(array $params, $sep, array &$output = []) {
+	protected function arr2fields(array $data) {
 		//set vars
 		$sql = [];
 		//loop through array
-		foreach($params as $k => $v) {
+		foreach($data as $k => $v) {
+			$p = is_numeric($k) ? $v : $k;
+			$sql[] = "`$p`";
+		}
+		//return
+		return implode(', ', $sql);
+	}
+
+	protected function arr2params(array $data, array &$params = []) {
+		//set vars
+		$sql = [];
+		//loop through array
+		foreach($data as $k => $v) {
+			$sql[] = ":$k";
+			$params[$k] = $v;
+		}
+		//return
+		return implode(', ', $sql);
+	}
+
+	protected function arr2where(array $data, $sep, array &$params = []) {
+		//set vars
+		$sql = [];
+		//loop through array
+		foreach($data as $k => $v) {
 			$p = is_numeric($k) ? '?' : ':' . $k;
-			$sql[] = "$k = $p";
-			$output[$k] = $v;
+			$sql[] = "`$k` = $p";
+			$params[$k] = $v;
 		}
 		//create string
 		$sql = implode($sep, $sql);
