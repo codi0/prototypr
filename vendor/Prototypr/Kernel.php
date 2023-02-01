@@ -546,8 +546,19 @@ namespace Prototypr {
 			if($key && $val !== '%%null%%') {
 				$this->config = Utils::addToArray($this->config, $key, $val);
 			}
-			//get item
-			return Utils::getFromArray($this->config, $key);
+			//get result
+			if($res = Utils::getFromArray($this->config, $key)) {
+				//cache instance
+				$ctx = $this;
+				//config placeholders
+				$res = Utils::updatePlaceholders($res, $this->config, '%', '%');
+				//service placeholders
+				$res = Utils::updatePlaceholders($res, function($key) use($ctx) {
+					return $ctx->service($key);
+				}, '[', ']');
+			}
+			//return
+			return $res;
 		}
 
 		public function platform($key=null, $val=null) {
@@ -1816,10 +1827,13 @@ namespace Prototypr {
 				//property exists?
 				if(property_exists($this, $k)) {
 					//is array?
-					if($merge && $this->$k === (array) $this->$k) {
-						$this->$k = array_merge($this->$k, $v);
-					} else {
+					if(!$merge || !is_array($this->$k) || !is_array($v)) {
 						$this->$k = $v;
+						continue;
+					}
+					//loop through array
+					foreach($v as $a => $b) {
+						$this->$k[$a] = $b;
 					}
 				}
 			}

@@ -28,6 +28,7 @@ class Utils {
 			}
 			//not found
 			$arr = $opts['default'];
+			//stop
 			break;
 		}
 		//return
@@ -64,6 +65,43 @@ class Utils {
 		}
 		//return
 		return $arr;
+	}
+
+	public static function updatePlaceholders($val, $arr, $leftSep, $rightSep) {
+		//is string?
+		if($val && is_string($val)) {
+			//replace placeholders?
+			if(preg_match_all("/" . preg_quote($leftSep) . "([a-z0-9\-\_]+)" . preg_quote($rightSep) . "/i", $val, $matches)) {
+				//loop through matches
+				foreach($matches[1] as $k => $v) {
+					//get value
+					if($arr instanceof \Closure) {
+						$tmp = $arr($v);
+					} else {
+						$tmp = self::getFromArray($arr, $v);
+					}
+					//found in array?
+					if($tmp !== null) {
+						//set placeholder
+						$p = $leftSep . $v . $rightSep;
+						//replace?
+						if($val === $p) {
+							$val = $tmp;
+							break;
+						} else {
+							$val = str_replace($p, $tmp, $val);
+						}
+					}
+				}
+			}
+		} else if($val && is_array($val)) {
+			//loop through array
+			foreach($val as $k => $v) {
+				$val[$k] = self::updatePlaceholders($v, $arr, $leftSep, $rightSep);
+			}
+		}
+		//return
+		return $val;
 	}
 
 }
