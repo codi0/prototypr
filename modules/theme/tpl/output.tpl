@@ -1,1 +1,1 @@
-<?= $tpl->data('output') ?>
+<?= $tpl->data('output', [ 'clean' => 'raw' ]) ?>

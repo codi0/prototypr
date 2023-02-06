@@ -15,7 +15,9 @@ class HtmlForm {
 
 	protected $model = [];
 	protected $errors = [];
+
 	protected $message = '';
+	protected $messageSuccess = true;
 
 	protected $isValid;
 	protected $autosave = true;
@@ -126,11 +128,12 @@ class HtmlForm {
 		return isset($this->attr[$key]) ? $this->attr[$key] : null;
 	}
 
-	public function message($message=null) {
+	public function message($message=null, $success=true) {
 		//get message?
 		if($message !== null) {
 			//set property
 			$this->message = $message ?: '';
+			$this->messageSuccess = (bool) $success;
 			//chain it
 			return $this;
 		}
@@ -373,7 +376,7 @@ class HtmlForm {
 		//success message?
 		if($this->message) {
 			if($this->isValid || (is_null($this->isValid) && $this->kernel->input('GET.success') == 'true')) {
-				$html .= '<div class="notice info">' . $this->message . '</div>' . "\n";
+				$html .= '<div class="notice ' . ($this->messageSuccess ? 'success' : 'error') . '">' . $this->message . '</div>' . "\n";
 			}
 		}
 		//error summary?
@@ -521,9 +524,16 @@ class HtmlForm {
 		$blacklist = [ 'name', 'value', 'label', 'error', 'validate', 'filter', 'before', 'after', 'wrap', 'override', 'fieldset', 'fieldset_attr' ];
 		//loop through attributes
 		foreach($attr as $key => $val) {
-			if(in_array($key, $blacklist)) {
-				unset($attr[$key]);
+			//in blacklist?
+			if(!in_array($key, $blacklist)) {
+				continue;
 			}
+			//skip blacklist?
+			if($key === 'wrap' && $val && is_string($val)) {
+				continue;
+			}
+			//remove key
+			unset($attr[$key]);
 		}
 		//return
 		return $attr;

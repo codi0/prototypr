@@ -159,7 +159,8 @@ class Api {
 	}
 
 	public function getUrl($path) {
-		return trim($this->kernel->config('base_url'), '/') . '/' . trim($this->getPath($path), '/');
+		$path = $this->getPath($path, true);
+		return trim($this->kernel->config('base_url'), '/') . '/' . trim($path, '/');
 	}
 
 	public function addEndpoint($path, $callback=null, array $route=[]) {
@@ -172,7 +173,9 @@ class Api {
 			$route['path'] = $path;
 		}
 		//format route
-		return $this->formatRoute($route);
+		$this->formatRoute($route);
+		//return
+		return true;
 	}
 
 	protected function addData($key, $val) {
@@ -186,6 +189,15 @@ class Api {
 	protected function formatRoute($route) {
 		//set vars
 		$ctx = $this;
+		//has run?
+		if(!$this->hasRun) {
+			//add route for later?
+			if(!in_array($route, $this->routes)) {
+				$this->routes[] = $route;
+			}
+			//stop
+			return;
+		}
 		//is array?
 		if(is_array($route)) {
 			//set array defaults
@@ -206,7 +218,7 @@ class Api {
 			unset($route['hide']);
 		}
 		//format path
-		$route['path'] = $this->getPath($route['path'], false);
+		$route['path'] = $this->getPath($route['path'], true);
 		//replace object strings
 		foreach([ 'callback', 'auth' ] as $k) {
 			//try replacing?
@@ -229,8 +241,6 @@ class Api {
 			$code = 0;
 			$errors = [];
 			$data = null;
-			//buffer
-			ob_start();
 			//begin
 			try {
 				//execute callback
@@ -279,8 +289,6 @@ class Api {
 		} else if($route['auth'] && !is_callable($route['auth'])) {
 			$route['auth'] = [ $this, $route['auth'] ];
 		}
-		//full path
-		$route['path'] = $this->getPath($route['path'], true);
 		//show API endpoint schema?
 		if($this->schemaRequest && $route['public']) {
 			//has schema?
