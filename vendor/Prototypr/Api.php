@@ -8,6 +8,7 @@ class Api {
 
 	protected $data = [];
 	protected $errors = [];
+	protected $response = null;
 
 	protected $basePath = '/';
 	protected $hasRun = false;
@@ -89,6 +90,10 @@ class Api {
 	}
 
 	public function respond(array $response, array $auditData=[]) {
+		//has responded?
+		if($this->response) {
+			return;
+		}
 		//format response
         $response = $this->formatResponse($response);
         //api response event
@@ -97,6 +102,8 @@ class Api {
         $this->auditLog($response, $auditData);
         //send response
         $this->kernel->json($response);
+        //cache response
+        $this->response = $response;
 	}
 
 	public function auth() {
@@ -236,7 +243,7 @@ class Api {
 		//bind callback to $this
 		$cb = $this->kernel->bind($route['callback']);
 		//wrap callback
-		$route['callback'] = function($params=[]) use($cb, $ctx) {
+		$route['callback'] = function($params=[]) use($cb, $ctx, $route) {
 			//set vars
 			$code = 0;
 			$errors = [];
@@ -277,7 +284,7 @@ class Api {
 				$this->logException($e, false);
 			}
 			//create response
-			return $ctx->respond([
+			$ctx->respond([
 				'code' => $code ? $code : ($errors ? 400 : ($data ? 200 : 500)),
 				'errors' => $errors,
 				'data' => $data,
