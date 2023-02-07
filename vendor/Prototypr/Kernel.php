@@ -171,6 +171,7 @@ namespace Prototypr {
 				'version' => null,
 				'theme' => null,
 				'annotations' => false,
+				'log_http_errors' => true,
 			], $this->config);
 			//cache instance
 			self::$_instances[$this->config['instance']] = $this->services['kernel'] = $this;
@@ -267,7 +268,7 @@ namespace Prototypr {
 				//log server error?
 				if($httpCode < 100 || $httpCode >= 500) {
 					//build error message
-					$errMsg = 'HTTP SERVER: ' . $httpCode . ' ' . $this->config['method'] . ' ' . $this->config['url'];
+					$errMsg = 'HTTP SERVER: Unexpected response code ' . $httpCode . ' | ' . $this->config['method'] . ' ' . $this->config['url'];
 					//app log error
 					$this->log('errors', $errMsg);
 				}
@@ -1287,9 +1288,18 @@ namespace Prototypr {
 						}
 					}
 				}
-				//try to parse body
-				$decode = json_decode($body, true);
-				$body = is_null($decode) ? $body : $decode;
+				//parse json?
+				if($body && isset($headers['content-type']) && stripos($headers['content-type'], 'json') !== false) {
+					//decode body
+					$body = json_decode($body, true);
+					//check for json error?
+					if($error = json_last_error()) {
+						//has error?
+						if($error != JSON_ERROR_NONE) {
+							$this->log('errors', 'HTTP CLIENT: Invalid json response | ' . $opts['method'] . ' ' . $opts['url']);
+						}
+					}
+				}
 				//wrap response?
 				if($opts['response_headers']) {
 					$response = [ 'status' => $status, 'headers' => $headers, 'body' => $body ];
@@ -1297,8 +1307,8 @@ namespace Prototypr {
 					$response = $body;
 				}
 				//log response error?
-				if($status < 100 || $status >= 400) {
-					$this->log('errors', 'HTTP CLIENT: ' . $status . ' ' . $opts['method'] . ' ' . $opts['url']);
+				if(($status < 100 || $status >= 400) && $this->config('log_http_errors')) {
+					$this->log('errors', 'HTTP CLIENT: Unexpected response code ' . $status . ' | ' . $opts['method'] . ' ' . $opts['url']);
 				}
 			}
 			//return
