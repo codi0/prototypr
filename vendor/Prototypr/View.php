@@ -115,8 +115,18 @@ class View {
 			//set default title?
 			if(!isset($data['meta']['title']) || !$data['meta']['title']) {
 				$route = isset($data['js']['route']) ? $data['js']['route'] : '';
+				$route = trim(preg_replace('/\/:[a-z0-9]+\??/', '', $route));
 				$data['meta']['title'] = str_replace([ '/', '-' ], [ ' > ', ' ' ], ucfirst($route));
 			}
+			//set body classes?
+			if(!isset($data['meta']['body_classes'])) {
+				$data['meta']['body_classes'] = [];
+			}
+			//add defaults
+			$data['meta']['body_classes'][] = 'page';
+			$data['meta']['body_classes'][] = $name;
+			//format as string
+			$data['meta']['body_classes'] = str_replace([ '_', '-', '/' ], ' ', implode(' ', $data['meta']['body_classes']));
 			//use theme?
 			if($themePath) {
 				//update paths

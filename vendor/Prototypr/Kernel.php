@@ -1682,7 +1682,7 @@ namespace Prototypr {
 			//get final output
 			$output = trim(ob_get_clean());
 			//show debug bar?
-			if($this->isDebug()) {
+			if($this->config('debug_bar') || isset($_GET['debugger'])) {
 				//get headers
 				$headers = preg_replace("/\s+/", "", implode("\n", headers_list()));
 				//is valid html request?
@@ -1867,32 +1867,32 @@ namespace Prototypr {
 
 		public function __call($method, array $args) {
 			//set vars
-			$target = null;
-			//find target
-			if(isset($this->__calls[$method])) {
-				$target = $this->__calls[$method];
-			} else if(method_exists($this, '__target')) {
-				$target = $this->__target();
-			}
+			$callback = isset($this->__calls[$method]) ? $this->__calls[$method] : null;
+			$target = $targetOrg = method_exists($this, '__target') ? $this->__target() : null;
 			//proxy.call event?
-			if($target && property_exists($this, '__kernel') && $this->__kernel) {
+			if(($target || $callback) && property_exists($this, '__kernel') && $this->__kernel) {
 				//execute event
 				$res = $this->__kernel->event('proxy.call', [
 					'target' => $target,
+					'callback' => $callback,
 					'method' => $method,
 					'args' => $args
 				]);
 				//update vars?
 				if($res && is_array($res)) {
 					//loop through vars
-					foreach([ 'target', 'method', 'args' ] as $k) {
+					foreach([ 'target', 'callback', 'method', 'args' ] as $k) {
 						if(isset($res[$k])) {
 							$$k = $res[$k];
 						}
 					}
 				}
 			}
-			//target found?
+			//use callback as target?
+			if($callback && (!$target || $target === $targetOrg)) {
+				$target = $callback;
+			}
+			//has target?
 			if($target) {
 				//is closure?
 				if($target instanceof \Closure) {
