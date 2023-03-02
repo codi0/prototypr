@@ -367,7 +367,8 @@ class Orm {
 			//select method
 			$method = $collection ? 'get_results' : 'get_row';
 			//execute query
-			$result = (array) $this->kernel->db->$method("SELECT * FROM $table WHERE $whereSql", $conditions) ?: [];
+			$query = $this->kernel->db->prepare("SELECT * FROM $table WHERE $whereSql", $conditions);
+			$result = (array) $this->kernel->db->$method($query) ?: [];
 			//decode json
 			$result = $this->decodeJson($result);
 		}
