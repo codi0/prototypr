@@ -248,7 +248,7 @@ class Db extends \PDO {
 			}
 			//log query
 			$this->num_queries++;
-			$this->queries[] = $s->queryString;
+			$this->queries[] = [ $s->queryString, $params ];
 			//update vars
 			$this->num_rows = 0;
 			$this->rows_affected = $s->rowCount();

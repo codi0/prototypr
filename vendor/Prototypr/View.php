@@ -108,25 +108,32 @@ class View {
 					$data['js'][$key] = $val;
 				}
 			}
+			//get route
+			$route = isset($data['js']['route']) ? $data['js']['route'] : '404';
+			$route = trim(preg_replace('/\/:([a-z0-9]+)(\?)?/i', '', $route));
 			//has noindex?
 			if(!isset($data['meta']['noindex']) && $this->kernel->config('env') !== 'prod') {
 				$data['meta']['noindex'] = true;
 			}
 			//set default title?
 			if(!isset($data['meta']['title']) || !$data['meta']['title']) {
-				$route = isset($data['js']['route']) ? $data['js']['route'] : '';
-				$route = trim(preg_replace('/\/:[a-z0-9]+\??/', '', $route));
 				$data['meta']['title'] = str_replace([ '/', '-' ], [ ' > ', ' ' ], ucfirst($route));
 			}
 			//set body classes?
 			if(!isset($data['meta']['body_classes'])) {
 				$data['meta']['body_classes'] = [];
 			}
-			//add defaults
-			$data['meta']['body_classes'][] = 'page';
-			$data['meta']['body_classes'][] = $name;
+			//add default body classes
+			foreach([ 'page', $name, $route ] as $cls) {
+				//format class
+				$cls = trim(str_replace([ ' ', '_', '/' ], '-', strtolower($cls)));
+				//add to array?
+				if(!empty($cls)) {
+					$data['meta']['body_classes'][] = $cls;
+				}
+			}
 			//format as string
-			$data['meta']['body_classes'] = str_replace([ '_', '-', '/' ], ' ', implode(' ', $data['meta']['body_classes']));
+			$data['meta']['body_classes'] = implode(' ', array_unique($data['meta']['body_classes']));
 			//use theme?
 			if($themePath) {
 				//update paths

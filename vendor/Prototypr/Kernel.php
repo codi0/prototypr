@@ -478,7 +478,7 @@ namespace Prototypr {
 				return null;
 			}
 			//is relative?
-			if($opts['relative']) {
+			if($opts['relative'] && $path !== '/') {
 				$path = str_replace($baseDir, '', $path);
 				$path = ltrim($path, '/');
 			}
@@ -1868,38 +1868,9 @@ namespace Prototypr {
 		public function __call($method, array $args) {
 			//set vars
 			$callback = isset($this->__calls[$method]) ? $this->__calls[$method] : null;
-			$target = $targetOrg = method_exists($this, '__target') ? $this->__target() : null;
-			//proxy.call event?
-			if(($target || $callback) && property_exists($this, '__kernel') && $this->__kernel) {
-				//execute event
-				$res = $this->__kernel->event('proxy.call', [
-					'target' => $target,
-					'callback' => $callback,
-					'method' => $method,
-					'args' => $args
-				]);
-				//update vars?
-				if($res && is_array($res)) {
-					//loop through vars
-					foreach([ 'target', 'callback', 'method', 'args' ] as $k) {
-						if(isset($res[$k])) {
-							$$k = $res[$k];
-						}
-					}
-				}
-			}
-			//use callback as target?
-			if($callback && (!$target || $target === $targetOrg)) {
-				$target = $callback;
-			}
-			//has target?
-			if($target) {
-				//is closure?
-				if($target instanceof \Closure) {
-					return $target(...$args);
-				} else {
-					return $target->$method(...$args);
-				}
+			//has callback?
+			if($callback) {
+				return $callback(...$args);
 			}
 			//not found
 			throw new \Exception("Method $method not found");
