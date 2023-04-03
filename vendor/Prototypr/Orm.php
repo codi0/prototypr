@@ -377,6 +377,13 @@ class Orm {
 	}
 
 	protected function syncRelation($model, $prop, array $meta) {
+		//check conditionals
+		foreach($meta['if'] as $k => $v) {
+			//skip relation?
+			if(!property_exists($model, $k) || $model->$k != $v) {
+				return null;
+			}
+		}
 		//resolve where conditions
 		foreach($meta['where'] as $k => $v) {
 			//is placeholder?

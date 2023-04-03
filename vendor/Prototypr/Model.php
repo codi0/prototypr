@@ -382,6 +382,7 @@ class Model {
 				'onSave' => true,
 				'onDelete' => true,
 				'skipFields' => [],
+				'if' => [],
 			];
 			//parse meta
 			$parse = Meta::parse($class, [
