@@ -1785,7 +1785,7 @@ namespace Prototypr {
 				'severity' => $severity,
 				'message' => $e->getMessage(),
 				'line' => $e->getLine(),
-				'file' => $e->getFile(),
+				'file' => str_replace($this->config['base_dir'] . '/', '', $e->getFile()),
 				'trace' => $e->getTraceAsString(),
 				'debug' => isset($e->debug) ? $e->debug : [],
 				'display' => $display,
@@ -1801,8 +1801,15 @@ namespace Prototypr {
 				$this->log('errors', $errMsgLog);
 				//display error?
 				if($error['display']) {
-					//show debug?
-					if($this->isDebug()) {
+					//use callable?
+					if(is_callable($error['display'])) {
+						//custom output
+						call_user_func($error['display']);
+					} else if(isset($this->routes['500'])) {
+						//route output
+						$this->route('500', [ 'error' => $error ]);
+					} else if($this->isDebug()) {
+						//debug output
 						echo '<div class="err" style="margin:1em 0; padding: 0.5em; border:1px red solid;">';
 						echo $errMsg . ' <a href="javascript:void(0);" onclick="this.nextSibling.style.display=\'block\';">[show trace]</a>';
 						echo '<div style="display:none; padding-top:15px;">';
@@ -1815,6 +1822,7 @@ namespace Prototypr {
 						echo '</div>';
 						echo "\n";
 					} else if(preg_match('/ERROR|PARSE/i', $error['type'])) {
+						//standard output
 						if($this->path('500')) {
 							$this->tpl('500');
 						} else {

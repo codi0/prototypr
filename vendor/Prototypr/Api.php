@@ -41,6 +41,13 @@ class Api {
 			'auth' => false,
 			'public' => false,
 		],
+		[
+			'path' => '500',
+			'methods' => [],
+			'callback' => [ '$this', 'serverError' ],
+			'auth' => false,
+			'public' => false,
+		],
 	];
 
 	public function init($basePath=null) {
@@ -148,6 +155,22 @@ class Api {
 		];
 	}
 
+	public function serverError(array $params) {
+		//set vars
+		$error = $params['error'];
+		$response = [ 'code' => 500 ];
+		//show debug info?
+		if($this->kernel->isDebug()) {
+			$response['debug'] = [
+				'message' => $error['message'],
+				'file' => $error['file'],
+				'line' => $error['line'],
+			];
+		}
+		//return
+		return $response;
+	}
+
 	public function getPath($path, $withBase = true) {
 		//set vars
 		$path = trim($path, '/');
@@ -194,8 +217,6 @@ class Api {
 	}
 
 	protected function formatRoute($route) {
-		//set vars
-		$ctx = $this;
 		//has run?
 		if(!$this->hasRun) {
 			//add route for later?
@@ -243,7 +264,7 @@ class Api {
 		//bind callback to $this
 		$cb = $this->kernel->bind($route['callback']);
 		//wrap callback
-		$route['callback'] = function($params=[]) use($cb, $ctx, $route) {
+		$route['callback'] = function($params=[]) use($cb, $route) {
 			//set vars
 			$code = 0;
 			$errors = [];
@@ -283,12 +304,18 @@ class Api {
 				//log exception
 				$this->logException($e, false);
 			}
-			//create response
-			$ctx->respond([
-				'code' => $code ? $code : ($errors ? 400 : ($data ? 200 : 500)),
-				'errors' => $errors,
-				'data' => $data,
-			]);
+			//is 500?
+			if($route['path'] == 500) {
+				//send json
+				$this->json($res);
+			} else {
+				//create response
+				$this->api->respond([
+					'code' => $code ? $code : ($errors ? 400 : ($data ? 200 : 500)),
+					'errors' => $errors,
+					'data' => $data,
+				]);
+			}
 		};
 		//format auth?
 		if($route['auth'] === true) {
