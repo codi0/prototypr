@@ -84,7 +84,7 @@ namespace Prototypr {
 			//base vars
 			$isCli = (php_sapi_name() === 'cli');
 			$scriptDir = $formatDir(dirname($_SERVER['SCRIPT_FILENAME']));
-			$incFrom = $formatDir(explode('/vendor/', dirname(array_reverse(get_included_files())[1]))[0]);
+			$incFrom = explode('/vendor/', $formatDir(dirname(array_reverse(get_included_files())[1])))[0];
 			$baseUrl = isset($opts['config']['base_url']) ? $opts['config']['base_url'] : '';
 			$baseDir = isset($opts['config']['base_dir']) ? $opts['config']['base_dir'] : '';
 			//format base dir
@@ -429,6 +429,7 @@ namespace Prototypr {
 
 		public function path($path='', array $opts=[]) {
 			//set vars
+			$path = $path ?: '';
 			$baseDir = $this->config['base_dir'];
 			$modulesDir = $this->config['modules_dir'];
 			$checkPaths = array_unique(array_merge([ $this->config['theme'] ], array_keys($this->config['modules']), [ $baseDir ]));
@@ -1232,8 +1233,16 @@ namespace Prototypr {
 				$parse['scheme'] = 'tcp';
 				$parse['port'] = $parse['port'] ?: 80;
 			}
-			//successful connection?
-			if($fp = fsockopen($parse['scheme'] . '://' . $parse['host'], $parse['port'], $errno, $errmsg, $opts['timeout'])) {
+			//is localhost?
+			$localhost = in_array($parse['host'], [ 'localhost', '127.0.0.1', '::1' ]);
+			//set context
+			$context = stream_context_create([
+				'ssl' => [
+					'allow_self_signed' => $localhost,
+				]
+			]);
+			//attempt connection?
+			if($fp = stream_socket_client($parse['scheme'] . '://' . $parse['host'] . ':' . $parse['port'], $errno, $errmsg, $opts['timeout'], STREAM_CLIENT_CONNECT, $context)) {
 				//set stream options
 				stream_set_timeout($fp, $opts['timeout']);
 				stream_set_blocking($fp, $opts['blocking']);

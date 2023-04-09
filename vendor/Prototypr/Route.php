@@ -5,6 +5,9 @@ namespace Prototypr;
 class Route implements \ArrayAccess {
 
 	use ConstructTrait;
+	
+	public $module;
+	public $isPrimary;
 
 	public $path = '';
 	public $callback = null;
@@ -36,12 +39,16 @@ class Route implements \ArrayAccess {
 
 	#[\ReturnTypeWillChange]
 	public function offsetSet($offset, $value) {
-		$this->$offset = $value;
+		if(property_exists($this, $offset)) {
+			$this->$offset = $value;
+		}
 	}
 
 	#[\ReturnTypeWillChange]
 	public function offsetUnset($offset) {
-		$this->$offset = null;
+		if(property_exists($this, $offset)) {
+			$this->$offset = null;
+		}
 	}
 
 	public function getSchema($method = null) {

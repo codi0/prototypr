@@ -4,12 +4,10 @@ namespace Prototypr;
 
 class Composer {
 
-	use ConstructTrait;
-
-	protected $packages = [];
+	protected $packages;
 	protected $isProduction = true;
 
-	protected $baseDir = '.';
+	protected $baseDir;
 	protected $localPharPath = '%composer_dir%/composer.phar';
 	protected $remotePharPath = 'https://getcomposer.org/composer.phar';
 	protected $composerClass = 'Composer\Console\Application';
@@ -32,13 +30,35 @@ class Composer {
 		'create-project' => [ '--prefer-dist' ],
 	];
 
-	protected function onConstruct(array $opts) {
-		//set base dir?
-		if($this->kernel && !isset($opts['baseDir'])) {
-			$this->baseDir = $this->kernel->config('base_dir');
+	public function __construct(array $opts=[], $merge=true) {
+		//set opts
+		foreach($opts as $k => $v) {
+			//property exists?
+			if(property_exists($this, $k)) {
+				//is array?
+				if(!$merge || !is_array($this->$k) || !is_array($v)) {
+					$this->$k = $v;
+					continue;
+				}
+				//loop through array
+				foreach($v as $a => $b) {
+					$this->$k[$a] = $b;
+				}
+			}
 		}
 		//disable detect unicode
 		ini_set('detect_unicode', 0);
+		//set base dir?
+		if(!$this->baseDir) {
+			//get current dir
+			$dir = str_replace('\\', '/', __DIR__);
+			//use vendor path?
+			if(strpos($dir, '/vendor/') !== false) {
+				$this->baseDir = explode('/vendor/', $dir)[0];
+			} else {
+				$this->baseDir = '.';
+			}
+		}
 		//standardise env vars
 		foreach($this->env as $k => $v) {
 			//replace keys
@@ -53,17 +73,6 @@ class Composer {
 	}
 
 	public function sync(array $opts=[]) {
-		//check packages?
-		if($this->packages) {
-			//get packages
-			$pck = $this->getPackages();
-			//loop through packages
-			foreach($this->packages as $name) {
-				if(!isset($pck[$name])) {
-					$this->requirePackage($name);
-				}
-			}
-		}
 		//set opts
 		$opts = array_merge([
 			'dir' => '',
@@ -78,11 +87,7 @@ class Composer {
 			return null;
 		}
 		//get autoload file
-		$autoloadFile = $this->env['COMPOSER_VENDOR_DIR'] . '/autoload.php';
-		//autoloader exists?
-		if(is_file($autoloadFile)) {
-			require_once($autoloadFile);
-		}
+		$this->incAutoloader();
 		//get lock file
 		$lockFile = str_replace('.json', '.lock', $composerFile);
 		$lockFileTime = is_file($lockFile) ? filemtime($lockFile) : 0;
@@ -154,25 +159,38 @@ class Composer {
 	}
 
 	public function getPackages() {
-		//set vars
-		$packages = [];
-		$lockFile = str_replace('.json', '.lock', $this->env['COMPOSER']);
-		//get json
-		$json = is_file($lockFile) ? file_get_contents($lockFile) : '';
-		$json = $json ? json_decode($json, true) : '';
-		//has data?
-		if($json) {
-			//add package names
-			foreach($json['packages'] as $p) {
-				$packages[$p['name']] = $this->env['COMPOSER_VENDOR_DIR'] . '/' . $p['name'];
+		//check now?
+		if($this->packages === null) {
+			//set vars
+			$this->packages = [];
+			$lockFile = str_replace('.json', '.lock', $this->env['COMPOSER']);
+			//get json
+			$json = is_file($lockFile) ? file_get_contents($lockFile) : '';
+			$json = $json ? json_decode($json, true) : '';
+			//has data?
+			if($json) {
+				//add package names
+				foreach($json['packages'] as $p) {
+					$this->packages[$p['name']] = $this->env['COMPOSER_VENDOR_DIR'] . '/' . $p['name'];
+				}
 			}
 		}
 		//return
-		return $packages;
+		return $this->packages;
 	}
 
 	public function requirePackage($package, array $args=[]) {
+		//get packages
+		$packages = $this->getPackages();
+		//already installed?
+		if(isset($packages[$package])) {
+			return true;
+		}
+		//add to cache
+		$this->packages[$package] = $this->env['COMPOSER_VENDOR_DIR'] . '/' . $package;
+		//format args
 		array_unshift($args, $package);
+		//return
 		return $this->cmd('require', $args);
 	}
 
@@ -258,6 +276,8 @@ class Composer {
 		$app->setAutoExit(false);
 		//run app
 		$code = $app->run();
+		//include autoloader
+		$this->incAutoloader();
 		//reset argv
 		$GLOBALS['argv'] = $_SERVER['argv'] = $tmpArgv;
 		$GLOBALS['argc'] = $_SERVER['argc'] = count($tmpArgv);
@@ -297,6 +317,15 @@ class Composer {
 		if(!class_exists($this->composerClass)) {
 			require_once('phar://' . $this->localPharPath . '/src/bootstrap.php');
 		}
+	}
+
+	protected function incAutoloader() {
+		//get file path
+		$file = $this->env['COMPOSER_VENDOR_DIR'] . '/autoload.php';
+		//file exists?
+		if(file_exists($file)) {
+			require_once($file);
+		}	
 	}
 
 	protected function formatArgs(array $args, $cmd=null) {
