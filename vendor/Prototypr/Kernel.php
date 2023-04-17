@@ -82,7 +82,7 @@ namespace Prototypr {
 				}
 			}
 			//base vars
-			$isCli = (php_sapi_name() === 'cli');
+			$isCli = substr(php_sapi_name(), 0, 3) === 'cli';
 			$scriptDir = $formatDir(dirname($_SERVER['SCRIPT_FILENAME']));
 			$incFrom = explode('/vendor/', $formatDir(dirname(array_reverse(get_included_files())[1])))[0];
 			$baseUrl = isset($opts['config']['base_url']) ? $opts['config']['base_url'] : '';
@@ -92,13 +92,21 @@ namespace Prototypr {
 			//is cli?
 			if($isCli) {
 				//set vars
+				$route = '';
 				$parseUrl = [];
 				//loop through argv
 				foreach($_SERVER['argv'] as $arg) {
-					//match found?
-					if(strpos($arg, '-baseUrl=') === 0) {
-						$baseUrl = explode('=', $arg, 2)[1];
-						break;
+					//trim arg
+					$arg = ltrim($arg, '-');
+					//has base url?
+					if(strpos($arg, 'baseUrl=') === 0) {
+						$baseUrl = trim(explode('=', $arg, 2)[1], '/');
+						continue;
+					}
+					//has route?
+					if(strpos($arg, 'route=') === 0) {
+						$route = trim(explode('=', $arg, 2)[1], '/');
+						continue;
 					}
 				}
 				//can parse?
@@ -116,6 +124,11 @@ namespace Prototypr {
 				//set REQUEST_URI?
 				if(!isset($_SERVER['REQUEST_URI'])) {
 					$_SERVER['REQUEST_URI'] = (isset($parseUrl['path']) && $parseUrl['path']) ? $parseUrl['path'] : '/';
+				}
+				//set PATH_INFO?
+				if($route) {
+					$_SERVER['PATH_INFO'] = '/' . $route;
+					$_SERVER['REQUEST_URI'] = rtrim($_SERVER['REQUEST_URI'], '/') . $_SERVER['PATH_INFO'];
 				}
 				//set SCRIPT_NAME?
 				if(!isset($_SERVER['SCRIPT_NAME'])) {
