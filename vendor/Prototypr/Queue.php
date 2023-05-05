@@ -9,13 +9,14 @@ class Queue {
 
 	protected $hosts = [];
 	protected $fallbackDir = '';
+	protected $phpBinary = 'php';
 
 	protected $consumerTtl = 60;
 	protected $maxConsumers = 10;
 	protected $consumerSpawnUrl = '';
 
 	protected $messageOpts = [
-		'delivery_mode' => AMQPMessage::DELIVERY_MODE_PERSISTENT,	
+		'delivery_mode' => AMQPMessage::DELIVERY_MODE_PERSISTENT,
 	];
 
 	protected $conn;
@@ -73,6 +74,7 @@ class Queue {
 		if($this->channel) {
 			$this->channel->close();
 		}
+		//close connection?
 		if($this->conn) {
 			$this->conn->close();
 		}
@@ -261,7 +263,7 @@ class Queue {
 		//set vars
 		$pipes = [];
 		//create process
-		$process = proc_open(PHP_BINARY . ' -d display_errors=stderr ' . $file, [
+		$process = proc_open($this->phpBinary . ' -d display_errors=stderr ' . $file, [
 			0 => [ "pipe", "r" ],
 			1 => [ "pipe", "w" ],
 			2 => [ "pipe", "w" ],

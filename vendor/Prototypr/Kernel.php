@@ -82,7 +82,7 @@ namespace Prototypr {
 				}
 			}
 			//base vars
-			$isCli = substr(php_sapi_name(), 0, 3) === 'cli';
+            $isCli = php_sapi_name() === 'cli' || defined('STDIN');
 			$scriptDir = $formatDir(dirname($_SERVER['SCRIPT_FILENAME']));
 			$incFrom = explode('/vendor/', $formatDir(dirname(array_reverse(get_included_files())[1])))[0];
 			$baseUrl = isset($opts['config']['base_url']) ? $opts['config']['base_url'] : '';
@@ -134,6 +134,8 @@ namespace Prototypr {
 				if(!isset($_SERVER['SCRIPT_NAME'])) {
 					$_SERVER['SCRIPT_NAME'] = rtrim($_SERVER['REQUEST_URI'], '/') . '/index.php';
 				}
+				//remove base dir
+				$_SERVER['SCRIPT_NAME'] = str_replace($baseDir, '', $_SERVER['SCRIPT_NAME']);
 			}
 			//url components
 			$method = (isset($_SERVER['REQUEST_METHOD']) && $_SERVER['REQUEST_METHOD']) ? $_SERVER['REQUEST_METHOD'] : 'GET';
@@ -142,7 +144,7 @@ namespace Prototypr {
 			$domain = isset($_SERVER['HTTP_HOST']) ? $_SERVER['HTTP_HOST'] : '';
 			$host = 'http' . ($ssl ? 's' : '') . '://' . $domain;
 			$reqBase = explode('?', $_SERVER['REQUEST_URI'])[0];
-			$scriptBase = $formatDir(dirname($_SERVER['SCRIPT_NAME'])) ?: '/';
+			$scriptBase = $formatDir(dirname(explode('.php', $_SERVER['SCRIPT_NAME'])[0])) ?: '/';
 			//loop through opts
 			foreach($opts as $k => $v) {
 				if(property_exists($this, $k)) {
@@ -279,7 +281,7 @@ namespace Prototypr {
 					$this->logException(new \ErrorException($error['message'], 0, $error['type'], $error['file'], $error['line']));
 				}
 				//log server error?
-				if($httpCode < 100 || $httpCode >= 500) {
+				if(is_numeric($httpCode) && ($httpCode < 100 || $httpCode >= 500)) {
 					//build error message
 					$errMsg = 'HTTP SERVER: Unexpected response code ' . $httpCode . ' | ' . $this->config['method'] . ' ' . $this->config['url'];
 					//app log error
