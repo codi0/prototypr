@@ -187,6 +187,7 @@ namespace Prototypr {
 				'theme' => null,
 				'annotations' => false,
 				'log_http_errors' => true,
+				'db_services' => [ 'db' ],
 			], $this->config);
 			//cache instance
 			self::$_instances[$this->config['instance']] = $this->services['kernel'] = $this;
@@ -1735,15 +1736,40 @@ namespace Prototypr {
 				'queries' => 0,
 				'queries_log' => [],
 			];
-			//check queries?
-			if(isset($this->services['db']) && !($this->services['db'] instanceOf \Closure)) {
-				//count queries
-				$data['queries'] = $this->db->num_queries;
-				//get query log
-				$data['queries_log'] = array_map(function($item) {
-					$item = is_array($item) ? $item[0] : $item;
-					return preg_replace("/\s+/", " ", $item);
-				}, $this->db->queries);
+			//cache dbs
+			$dbCache = [];
+			//loop through db objects
+			foreach($this->config('db_services') as $key) {
+				//skip object?
+				if(!isset($this->services[$key]) || ($this->services[$key] instanceOf \Closure)) {
+					continue;
+				}
+				//get db
+				$db = $this->services[$key];
+				//get db name
+				$dbname = isset($db->dbname) ? $db->dbname : $db->name;
+				//already processed?
+				if(!in_array($dbname, $dbCache)) {
+					//add to cache
+					$dbCache[] = $dbname;
+					//count queries
+					$data['queries'] += count($db->queries);
+					//get query log
+					$data['queries_log'][$dbname] = array_map(function($item) {
+						//set vars
+						$result = [];
+						//is array?
+						if(is_array($item)) {
+							$result['query'] = $item[0];
+							$result['time'] = isset($item[1]) ? number_format($item[1], 5) : 0;
+						} else {
+							$result['query'] = $item;
+							$result['time'] = 0;
+						}
+						//return
+						return $result;
+					}, $db->queries);
+				}
 			}
 			//stop here?
 			if(!$asHtml) {
@@ -1756,11 +1782,19 @@ namespace Prototypr {
 			$html .= '<span style="color:blue;cursor:pointer;">' . $data['queries'] . ' queries &raquo;</span>';
 			$html .= '</div>';
 			if($data['queries_log']) {
-				$html .= '<ol class="queries" style="padding-left:20px; display:none;">';
-				foreach($data['queries_log'] as $q) {
-					$html .= '<li style="margin:8px 0 0 0; line-height:1.1;">' . $q . '</li>';
+				$html .= '<div class="queries" style="display:none;">';
+				foreach($data['queries_log'] as $name => $queries) {
+					$html .= '<p>DB name: ' . $name . '</p>';
+					$html .= '<ol style="padding-left:20px; margin-left:0;">';
+					foreach($queries as $q) {
+						if($q['time'] > 0.1) {
+							$q['time'] = '<span style="color:red;">' . $q['time'] . '</span>';
+						}
+						$html .= '<li style="margin:8px 0 0 0; line-height:1.1;">' . $q['query'] . ' | ' . $q['time'] . '</li>';
+					}
+					$html .= '</ol>';
 				}
-				$html .= '</ol>';
+				$html .= '</div>';
 			} else {
 				$html .= '<div class="no-queries" style="display:none;">Query log empty</div>';
 			}

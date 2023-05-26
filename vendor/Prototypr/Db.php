@@ -222,6 +222,7 @@ class Db extends \PDO {
 	#[\ReturnTypeWillChange]
 	public function query($query, $fetchMode = NULL, ...$fetchModeArgs) {
 		//set vars
+		$time = 0;
 		$res = false;
 		$params = is_array($fetchMode) ? $fetchMode : [];
 		$s = is_object($query) ? $query : $this->prepare($query, $params);
@@ -241,14 +242,16 @@ class Db extends \PDO {
 			}
 			//execute
 			try {
+				$time = microtime(true);
 				$s->execute($params);
+				$time = microtime(true) - $time;
 			} catch(\Exception $e) {
 				$e->debug = [ 'Query' => $s->queryString, 'Params' => $params ];
 				throw $e;
 			}
 			//log query
 			$this->num_queries++;
-			$this->queries[] = [ $s->queryString, $params ];
+			$this->queries[] = [ $s->queryString, $time, $params ];
 			//update vars
 			$this->num_rows = 0;
 			$this->rows_affected = $s->rowCount();
