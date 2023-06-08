@@ -63,13 +63,15 @@ class Model {
 		$val = $this->onFilter($key, $val);
 		//update value?
 		if($this->__meta['props'][$key]['value'] !== $val) {
-			//set value
+			//cache old value
+			$oldVal = $this->__meta['props'][$key]['value'];
+			//set new value
 			$this->__meta['props'][$key]['value'] = $val;
 			//notify model
 			$this->onChange($key, $val, $this->__meta['hydrating']);
 			//notify orm?
 			if(!$this->__meta['hydrating']) {
-				$this->kernel->orm->onChange($this, $key, $val);
+				$this->kernel->orm->onChange($this, $key, $oldVal, $val);
 			}
 		}
 	}

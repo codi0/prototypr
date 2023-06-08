@@ -167,6 +167,7 @@ class Orm {
 	public function save($model) {
 		//set vars
 		$data = [];
+		$dataOld = [];
 		$result = null;
 		$class = get_class($model);
 		$table = $this->dbTable($class);
@@ -182,7 +183,11 @@ class Orm {
 		if($model instanceOf Model && $model->{$meta['id']}) {
 			//use change cache?
 			if(isset($this->changeCache[$changeCacheKey])) {
-				$data = $this->changeCache[$changeCacheKey];
+				//loop through changes
+				foreach($this->changeCache[$changeCacheKey] as $k => $v) {
+					$data[$k] = $v['to'];
+					$dataOld[$k] = $v['from'];
+				}
 			}
 		} else if(method_exists($model, 'toArray')) {
 			//data as array
@@ -200,38 +205,50 @@ class Orm {
 				}
 			}
 		}
+		//add ID to ignore list?
+		if($meta['id'] && $meta['isNew'] === false) {
+			$meta['ignore'][] = $meta['id'];
+		}
 		//filter data
 		foreach($data as $k => $v) {
-			//remove from array?
+			//remove key?
 			if(in_array($k, $meta['ignore']) || is_object($v)) {
+				//remove key
 				unset($data[$k]);
+				//remove old key?
+				if(array_key_exists($k, $dataOld)) {
+					unset($dataOld[$k]);
+				}
+				//next
 				continue;
 			}
-			//remove ID?
-			if($k === $meta['id'] && $meta['isNew'] === false) {
-				unset($data[$k]);
-				continue;	
-			}
-			//null field?
+			//update key?
 			if(empty($v) && isset($meta['props'][$k]) && $meta['props'][$k]['null']) {
 				$data[$k] = NULL;
-				continue;
-			}
-			//is bool?
-			if(is_bool($v)) {
+			} else if(is_bool($v)) {
 				$data[$k] = $v ? 1 : 0;
-				continue;
-			}
-			//is array?
-			if(is_array($v)) {
+			} else if(is_array($v)) {
 				$data[$k] = json_encode($v);
-				continue;
+			}
+			//update old key?
+			if(array_key_exists($k, $dataOld)) {
+				if(empty($dataOld[$k]) && isset($meta['props'][$k]) && $meta['props'][$k]['null']) {
+					$dataOld[$k] = NULL;
+				} else if(is_bool($dataOld[$k])) {
+					$dataOld[$k] = $dataOld[$k] ? 1 : 0;
+				} else if(is_array($dataOld[$k])) {
+					$dataOld[$k] = json_encode($dataOld[$k]);
+				}
+				//does old equal new?
+				if($dataOld[$k] === $data[$k]) {
+					unset($data[$k], $dataOld[$k]);
+				}
 			}
 		}
 		//anything to save?
 		if(!empty($data)) {
 			//save event
-			$data = $this->kernel->event('orm.save', $data, $model);
+			$data = $this->kernel->event('orm.save', $model, $data, $dataOld);
 			//stop here?
 			if($data === false) {
 				return false;
@@ -305,7 +322,7 @@ class Orm {
 		return ($result !== false);
 	}
 
-	public function onChange($model, $key, $val) {
+	public function onChange($model, $key, $fromVal, $toVal) {
 		//get model hash
 		$hash = spl_object_hash($model);
 		//create array?
@@ -313,7 +330,10 @@ class Orm {
 			$this->changeCache[$hash] = [];
 		}
 		//log change
-		$this->changeCache[$hash][$key] = $val;
+		$this->changeCache[$hash][$key] = [
+			'from' => $fromVal,
+			'to' => $toVal,
+		];
 	}
 
 	public function clearCache() {
