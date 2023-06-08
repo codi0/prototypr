@@ -327,13 +327,13 @@ class Orm {
 		$hash = spl_object_hash($model);
 		//create array?
 		if(!isset($this->changeCache[$hash])) {
-			$this->changeCache[$hash] = [];
+			$this->changeCache[$hash] = [
+				'from' => $fromVal,
+				'to' => $toVal,
+			];
 		}
 		//log change
-		$this->changeCache[$hash][$key] = [
-			'from' => $fromVal,
-			'to' => $toVal,
-		];
+		$this->changeCache[$hash][$key]['to'] = $toVal;
 	}
 
 	public function clearCache() {
