@@ -325,14 +325,19 @@ class Orm {
 	public function onChange($model, $key, $fromVal, $toVal) {
 		//get model hash
 		$hash = spl_object_hash($model);
-		//create array?
+		//create hash array?
 		if(!isset($this->changeCache[$hash])) {
-			$this->changeCache[$hash] = [
+			$this->changeCache[$hash] = [];
+		}
+		//create hash.key array?
+		if(!isset($this->changeCache[$hash][$key])) {
+			//set from and to value
+			$this->changeCache[$hash][$key] = [
 				'from' => $fromVal,
 				'to' => $toVal,
 			];
 		}
-		//log change
+		//update to value
 		$this->changeCache[$hash][$key]['to'] = $toVal;
 	}
 
