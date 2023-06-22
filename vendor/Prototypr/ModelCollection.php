@@ -134,6 +134,10 @@ class ModelCollection extends \ArrayObject {
 		if(!is_array($prop)) {
 			$prop = [ $prop => $val ];
 		}
+		//store as conditions?
+		if(!$this->conditions) {
+			$this->conditions = $prop;
+		}
 		//lazy load
 		$this->lazyLoad();
 		//loop through models

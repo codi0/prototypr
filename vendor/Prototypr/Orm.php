@@ -43,8 +43,8 @@ class Orm {
 			$model->$k = $this->syncRelation($model, $k, $v);
 		}
 		//update model cache?
-		if($model->{$meta['id']}) {
-			$idCacheKey = $this->formatKey($class, [ $meta['id'] => $model->{$meta['id']} ]);
+		if($idVal = $model->{$meta['id']}) {
+			$idCacheKey = $this->formatKey($class, [ $meta['id'] => $idVal ]);
 			$this->modelCache[$idCacheKey] = $model;
 		}
 		//return
@@ -94,7 +94,7 @@ class Orm {
 		//create model
 		$model = $this->create($name, $data);
 		//update isNew meta?
-		if($model->{$meta['id']}) {
+		if($idVal = $model->{$meta['id']}) {
 			$this->classMeta($class, [ 'object' => $model, 'key' => 'isNew', 'val' => false ]);
 		}
 		//update con cache?
@@ -144,9 +144,9 @@ class Orm {
 			$model->$key = $val;
 		}
 		//has ID?
-		if($model->{$meta['id']}) {
+		if($idVal = $model->{$meta['id']}) {
 			//update model cache
-			$idCacheKey = $this->formatKey($class, [ $meta['id'] => $model->{$meta['id']} ]);
+			$idCacheKey = $this->formatKey($class, [ $meta['id'] => $idVal ]);
 			$this->modelCache[$idCacheKey] = $model;
 			//update isNew meta
 			$this->classMeta($class, [ 'object' => $model, 'key' => 'isNew', 'val' => false ]);
@@ -169,6 +169,7 @@ class Orm {
 		$data = [];
 		$dataOld = [];
 		$result = null;
+		$allEmpty = true;
 		$class = get_class($model);
 		$table = $this->dbTable($class);
 		$meta = $this->classMeta($class, [ 'object' => $model ]);
@@ -177,10 +178,11 @@ class Orm {
 			throw new \Exception("Model cannot be saved without an ID field: " . $meta['id']);
 		}
 		//cache keys
+		$idVal = $model->{$meta['id']};
 		$changeCacheKey = spl_object_hash($model);
-		$modelCacheKey = $this->formatKey($class, [ $meta['id'] => $model->{$meta['id']} ]);
+		$modelCacheKey = $this->formatKey($class, [ $meta['id'] => $idVal ]);
 		//get public data
-		if($model instanceOf Model && $model->{$meta['id']}) {
+		if($model instanceOf Model && $idVal) {
 			//use change cache?
 			if(isset($this->changeCache[$changeCacheKey])) {
 				//loop through changes
@@ -206,7 +208,7 @@ class Orm {
 			}
 		}
 		//ignore ID?
-		if($meta['id'] && !$model->{$meta['id']}) {
+		if($meta['id'] && !$idVal) {
 			$meta['ignore'][] = $meta['id'];
 		}
 		//filter data
@@ -242,8 +244,17 @@ class Orm {
 				//does old equal new?
 				if($dataOld[$k] === $data[$k]) {
 					unset($data[$k], $dataOld[$k]);
+					continue;
 				}
 			}
+			//is non-empty value?
+			if(!empty($data[$k])) {
+				$allEmpty = false;
+			}
+		}
+		//wipe data?
+		if($allEmpty) {
+			$data = [];
 		}
 		//call save event?
 		if(!empty($data)) {
@@ -252,19 +263,23 @@ class Orm {
 		//anything to save?
 		if(!empty($data)) {
 			//insert or update?
-			if($meta['isNew'] === true || ($meta['isNew'] === null && !$model->{$meta['id']})) {
+			if($meta['isNew'] === true || ($meta['isNew'] === null && !$idVal)) {
 				//insert query
 				$result = $this->kernel->db->insert($table, $data);
 				//cache insert ID?
 				if($result !== false) {
 					//update ID
-					$model->{$meta['id']} = $this->kernel->db->insert_id;
+					$model->{$meta['id']} = $idVal = $this->kernel->db->insert_id;
 					//update isNew meta
-					$this->classMeta($class, [ 'object' => $model, 'key' => 'isNew', 'val' => false ]);
+					$this->classMeta($class, [
+						'object' => $model,
+						'key' => 'isNew',
+						'val' => false,
+					]);
 				}
 			} else {
 				//update query
-				$result = $this->kernel->db->update($table, $data, [ $meta['id'] => $model->{$meta['id']} ]);
+				$result = $this->kernel->db->update($table, $data, [ $meta['id'] => $idVal ]);
 			}
 			//update caches?
 			if($result !== false) {
@@ -279,7 +294,7 @@ class Orm {
 			}
 		}
 		//return
-		return ($result !== false && $model->{$meta['id']}) ? $model->{$meta['id']} : false;
+		return ($result !== false && $idVal) ? $idVal : false;
 	}
 
 	public function delete($model) {
@@ -293,20 +308,20 @@ class Orm {
 			throw new \Exception("Model cannot be deleted without an ID field: " . $meta['id']);
 		}
 		//anything to delete?
-		if($id = $model->{$meta['id']}) {
+		if($idVal = $model->{$meta['id']}) {
 			//delete event
 			if($this->kernel->event('orm.delete', $model) === false) {
 				return false;
 			}
 			//delete query
-			$result = $this->kernel->db->delete($table, [ $meta['id'] => $id ]);
+			$result = $this->kernel->db->delete($table, [ $meta['id'] => $idVal ]);
 			//unset value
 			$model->{$meta['id']} = null;
 			//reset isNew meta
 			$this->classMeta($class, [ 'object' => $model, 'key' => 'isNew', 'val' => true ]);
 			//cache keys
 			$changeCacheKey = spl_object_hash($model);
-			$modelCacheKey = $this->formatKey($class, [ $meta['id'] => $id ]);
+			$modelCacheKey = $this->formatKey($class, [ $meta['id'] => $idVal ]);
 			//delete change cache?
 			if(isset($this->changeCache[$changeCacheKey])) {
 				unset($this->changeCache[$changeCacheKey]);
