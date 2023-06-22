@@ -205,8 +205,8 @@ class Orm {
 				}
 			}
 		}
-		//add ID to ignore list?
-		if($meta['id'] && $meta['isNew'] === false) {
+		//ignore ID?
+		if($meta['id'] && !$model->{$meta['id']}) {
 			$meta['ignore'][] = $meta['id'];
 		}
 		//filter data
@@ -245,14 +245,12 @@ class Orm {
 				}
 			}
 		}
+		//call save event?
+		if(!empty($data)) {
+			$data = $this->kernel->event('orm.save', $model, $data, $dataOld);
+		}
 		//anything to save?
 		if(!empty($data)) {
-			//save event
-			$data = $this->kernel->event('orm.save', $model, $data, $dataOld);
-			//stop here?
-			if($data === false) {
-				return false;
-			}
 			//insert or update?
 			if($meta['isNew'] === true || ($meta['isNew'] === null && !$model->{$meta['id']})) {
 				//insert query

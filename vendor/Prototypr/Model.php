@@ -62,7 +62,7 @@ class Model {
 		//filter value
 		$val = $this->onFilter($key, $val);
 		//update value?
-		if($this->__meta['props'][$key]['value'] !== $val) {
+		if($this->__meta['props'][$key]['value'] != $val) {
 			//cache old value
 			$oldVal = $this->__meta['props'][$key]['value'];
 			//set new value

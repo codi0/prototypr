@@ -245,6 +245,7 @@ class Db extends \PDO {
 				$time = microtime(true);
 				$s->execute($params);
 				$time = microtime(true) - $time;
+				//file_put_contents(__DIR__ . '/db.log', $s->queryString . ' - ' . json_encode($params) . "\n", FILE_APPEND);
 			} catch(\Exception $e) {
 				$e->debug = [ 'Query' => $s->queryString, 'Params' => $params ];
 				throw $e;

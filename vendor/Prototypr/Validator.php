@@ -57,7 +57,7 @@ class Validator {
 		$result = true;
 		//format rules?
 		if(!is_array($rules)) {
-			$rules = array_map('trim', explode('|', $rules));
+			$rules = array_map('trim', explode('|', $rules ?: ''));
 		}
 		//is field not set?
 		if($this->ruleRequired($value)) {
@@ -95,7 +95,7 @@ class Validator {
 	public function filter($filters, $value) {
 		//format filters?
 		if(!is_array($filters)) {
-			$filters = array_map('trim', explode('|', $filters));
+			$filters = array_map('trim', explode('|', $filters ?: ''));
 		}
 		//loop through filters
 		foreach(array_unique($filters) as $filter) {
@@ -138,7 +138,7 @@ class Validator {
 	}
 
 	protected function filterNowhitespace($value) {
-		return preg_replace('/s+/', '', $value);
+		return preg_replace('/s+/', '', $value ?: '');
 	}
 
 	protected function ruleRegex($value, $pattern='') {
@@ -162,7 +162,7 @@ class Validator {
 		//set vars
 		$pattern = '/' . preg_quote($pattern, '/') . '/';
 		//filter input
-		return preg_replace($pattern, '', $value);
+		return preg_replace($pattern, '', $value ?: '');
 	}
 
 	protected function ruleString($value) {
@@ -202,7 +202,7 @@ class Validator {
 	}
 
 	protected function filterId($value) {
-		return preg_replace('/[^0-9]/', '', $value);
+		return preg_replace('/[^0-9]/', '', $value ?: '');
 	}
 
 	protected function ruleDigits($value, $length=null) {
@@ -215,7 +215,7 @@ class Validator {
 	}
 
 	protected function filterDigits($value) {
-		return preg_replace('/[^0-9]/', '', $value);
+		return preg_replace('/[^0-9]/', '', $value ?: '');
 	}
 
 	protected function ruleNumeric($value) {
@@ -226,7 +226,7 @@ class Validator {
 	}
 
 	protected function filterNumeric($value) {
-		return preg_replace('/[^\+\-\.0-9]/', '', $value);
+		return preg_replace('/[^\+\-\.0-9]/', '', $value ?: '');
 	}
 
 	protected function ruleAlphanumeric($value) {
@@ -237,7 +237,7 @@ class Validator {
 	}
 
 	protected function filterAlphanumeric($value) {
-		return preg_replace('/[^a-z0-9]/i', '', $value);
+		return preg_replace('/[^a-z0-9]/i', '', $value ?: '');
 	}
 
 	protected function ruleUuid($value) {
@@ -248,7 +248,7 @@ class Validator {
 	}
 
 	protected function filterUuid($value) {
-		return preg_replace('/[^a-f0-9\-]/i', '', $value);
+		return preg_replace('/[^a-f0-9\-]/i', '', $value ?: '');
 	}
 
 	protected function ruleArray($value) {
@@ -399,7 +399,7 @@ class Validator {
 
 	protected function rulePhone($value, $cc='') {
 		//remove optional chars
-		$valFormatted = str_replace('-', '', $value);
+		$valFormatted = str_replace('-', '', $value ?: '');
 		$valFormatted = preg_replace('/\s+/', '', $valFormatted);
 		//use cc?
 		if(strpos($cc, '+') === 0) {
@@ -417,7 +417,7 @@ class Validator {
 
 	protected function filterPhone($value, $cc='') {
 		//remove optional characters
-		$value = str_replace('-', '', $value);
+		$value = str_replace('-', '', $value ?: '');
 		$value = preg_replace('/\s+/', '', $value);
 		//has country code?
 		if(strpos($value, '+') !== 0) {
@@ -480,7 +480,7 @@ class Validator {
 	}
 
 	protected function filterIp($value) {
-		return preg_replace('/[^\.0-9]/', '', $value);
+		return preg_replace('/[^\.0-9]/', '', $value ?: '');
 	}
 
 	protected function ruleDateFormat($value, $format='Y-m-d') {
@@ -511,7 +511,7 @@ class Validator {
 
 	protected function ruleXss($value) {
 		//decode input
-		$value = rawurldecode(rawurldecode($value));
+		$value = rawurldecode(rawurldecode($value ?: ''));
 		//run unsafe check
 		$unsafe = preg_replace('/\s+/', '', $value); 
 		$unsafe = preg_match('/(onclick|onload|onerror|onmouse|onkey)|(script|alert|confirm)[\:\>\(]/iS', $unsafe);
@@ -523,7 +523,7 @@ class Validator {
 
 	protected function filterXss($value) {
 		//decode input
-		$value = rawurldecode(rawurldecode($value));
+		$value = rawurldecode(rawurldecode($value ?: ''));
 		//run unsafe check
 		$unsafe = preg_replace('/\s+/', '', $value); 
 		$unsafe = preg_match('/(onclick|onload|onerror|onmouse|onkey)|(script|alert|confirm)[\:\>\(]/iS', $unsafe);
