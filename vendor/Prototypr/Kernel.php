@@ -155,6 +155,7 @@ namespace Prototypr {
 			$this->config = array_merge([
 				//env
 				'env' => null,
+				'env_opts' => [ 'dev', 'staging', 'prod' ],
 				'debug' => null,
 				'cli' => $isCli,
 				'included' => $incFrom !== $scriptDir,
@@ -169,6 +170,7 @@ namespace Prototypr {
 				'modules_dir' => $baseDir . '/modules',
 				//url
 				'ssl' => $ssl,
+				'domain' => $domain,
 				'host' => $host,
 				'port' => $port,
 				'url' => $host . $_SERVER['REQUEST_URI'],
@@ -228,7 +230,19 @@ namespace Prototypr {
 			if($domain && $this->config['allowed_hosts']) {
 				//valid host?
 				if(isset($this->config['allowed_hosts'][$domain])) {
-					$this->config['env'] = $this->config['env'] ?: $this->config['allowed_hosts'][$domain];
+					//empty env?
+					if(!$this->config['env']) {
+						//get tags array
+						$tags = (array) $this->config['allowed_hosts'][$domain];
+						//loop through env opts
+						foreach($this->config['env_opts'] as $e) {
+							//match found?
+							if(in_array($e, $tags)) {
+								$this->config['env'] = $e;
+								break;
+							}
+						}
+					}
 				} else {
 					$domain = false;
 				}
@@ -323,28 +337,25 @@ namespace Prototypr {
 					$whitelist = $this->config['modules'];
 					$this->config['modules'] = [];
 				}
-				//module name
+				//set vars
+				$match = [];
 				$name = basename($dir);
-				//module meta data
-				$meta = array_merge([
-					'path' => null,
-					'platform' => null,
-				], isset($whitelist[$name]) ? $whitelist[$name] : []);
+				$meta = isset($whitelist[$name]) ? $whitelist[$name] : [];
 				//whitelist match?
 				if($whitelist && !isset($whitelist[$name]) && !in_array($name, $whitelist)) {
 					continue;
 				}
-				//path match?
-				if($meta['path'] && strpos($this->config['pathinfo'], $meta['path']) !== 0) {
-					continue;
+				//text-based matches
+				foreach($meta as $k => $v) {
+					if($k && $v) {
+						$match[] = $k . '=' . $v;
+					}
 				}
-				//platform match?
-				if($meta['platform'] && $meta['platform'] !== $this->platform()) {
-					continue;
+				//can load module?
+				if(!$match || $this->isMatch($match)) {
+					$this->module($name);
 				}
-				//load now
-				$this->module($name);
-			}	
+			}
 			//loaded event
 			$this->event('app.loaded');
 			//upgrade event?
@@ -398,6 +409,41 @@ namespace Prototypr {
 		public function isDebug() {
 			return ($this->config['debug'] === true);
 		}	
+
+		public function isMatch($args) {
+			//set vars
+			$args = is_array($args) ? $args : func_get_args();
+			//loop through args
+			foreach($args as $arg) {
+				//parse arg
+				list($k, $v) = explode('=', $arg, 2);
+				//tags match?
+				if($k === 'tags' && $v) {
+					$vArr = array_map('trim', explode(',', $v));
+					$hosts = $this->config['allowed_hosts'];
+					$tags = isset($hosts[$this->config['domain']]) ? $hosts[$this->config['domain']] : [];
+					foreach($vArr as $t) {
+						if($t && !in_array($t, $tags)) {
+							return false;
+						}
+					}
+				}
+				//function match?
+				if($k === 'function' && $v && !function_exists($v)) {
+					return false;
+				}
+				//platform match?
+				if($k === 'platform' && $v && $this->platform() !== $v) {
+					return false;
+				}
+				//pathinfo match?
+				if($k === 'pathinfo' && $v && strpos($this->config['pathinfo'], $v) !== 0) {
+					return false;
+				}
+			}
+			//return
+			return true;
+		}
 
 		public function bind($callable, $thisArg = null) {
 			//bind closure?
@@ -595,14 +641,14 @@ namespace Prototypr {
 		public function module($name) {
 			//already loaded?
 			if(!array_key_exists($name, $this->config['modules'])) {
-				//get module dir
+				//set vars
+				$vendor = false;
+				$prev = $this->config['module_loading'];
 				$dir = $this->config['modules_dir'] . '/' . $name;
 				//valid module?
 				if(!is_dir($dir)) {
 					throw new \Exception("Module $name does not exist");
 				}
-				//cache last loading
-				$prev = $this->config['module_loading'];
 				//update loading value
 				$this->config['module_loading'] = $name;
 				//cache module
@@ -610,16 +656,21 @@ namespace Prototypr {
 				//add vendor dir?
 				if(is_dir($dir . '/vendor')) {
 					array_unshift($this->config['vendor_dirs'], $dir . '/vendor');
+					$vendor = true;
 				}
 				//bootstrap module?
 				if(is_file($dir . '/module.php')) {
 					//create closure
 					$moduleFn = $this->bind(function($__file) {
-						require_once($__file);
+						return require_once($__file);
 					});
 					//has return statement?
 					if($ret = $moduleFn($dir . '/module.php')) {
 						$this->config['modules'][$name] = $ret;
+					}
+					//remove vendor dir?
+					if($vendor && $ret === false) {
+						array_shift($this->config['vendor_dirs']);
 					}
 				}
 				//reset loading value
@@ -1255,6 +1306,8 @@ namespace Prototypr {
 			$context = stream_context_create([
 				'ssl' => [
 					'allow_self_signed' => $localhost,
+                    'verify_peer' => !$localhost,
+                    'verify_peer_name' => !$localhost
 				]
 			]);
 			//attempt connection?
