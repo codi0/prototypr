@@ -411,8 +411,12 @@ namespace Prototypr {
 		}	
 
 		public function isMatch($args) {
-			//set vars
-			$args = is_array($args) ? $args : func_get_args();
+			//format args?
+			if(func_num_args() > 1) {
+				$args = func_get_args();
+			} else if(!is_array($args)) {
+				$args = array_map('trim', explode('&', $args));
+			}
 			//loop through args
 			foreach($args as $arg) {
 				//parse arg
@@ -455,6 +459,15 @@ namespace Prototypr {
 			return $callable;
 		}
 
+		public function caller($key=null) {
+			//exception trace
+			$ex = new \Exception; 
+			$trace = $ex->getTrace();  
+			$arr = isset($trace[2]) ? $trace[2] : [];
+			//return
+			return $key ? (isset($arr[$key]) ? $arr[$key] : null) : $arr;
+		}
+
 		public function class($name) {
 			//format name
 			$name = ucfirst($name);
@@ -494,8 +507,22 @@ namespace Prototypr {
 			$path = $path ?: '';
 			$baseDir = $this->config['base_dir'];
 			$modulesDir = $this->config['modules_dir'];
-			$checkPaths = array_unique(array_merge([ $this->config['theme'] ], array_keys($this->config['modules']), [ $baseDir ]));
+			$moduleNames = array_keys($this->config['modules']);
+			//has calling module?
+			if($caller = $this->caller('file')) {
+				//loop through modules
+				foreach($moduleNames as $m) {
+					//match found?
+					if(strpos($caller, $modulesDir . '/' . $m . '/') === 0) {
+						array_unshift($moduleNames, $m);
+						$moduleNames = array_unique($moduleNames);
+						break;
+					}
+				}
+			}
+			//merge values to check
 			$checkExts = [ 'tpl' => 'tpl' ];
+			$checkPaths = array_unique(array_merge([ $this->config['theme'] ], $moduleNames, [ $baseDir ]));
 			//default opts
 			$opts = array_merge([
 				'relative' => false,
