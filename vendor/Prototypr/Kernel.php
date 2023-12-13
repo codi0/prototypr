@@ -461,9 +461,9 @@ namespace Prototypr {
 
 		public function caller($key=null) {
 			//exception trace
-			$ex = new \Exception; 
-			$trace = $ex->getTrace();  
-			$arr = isset($trace[2]) ? $trace[2] : [];
+			$ex = new \Exception;
+			$trace = $ex->getTrace();
+			$arr = isset($trace[1]) ? $trace[1] : [];
 			//return
 			return $key ? (isset($arr[$key]) ? $arr[$key] : null) : $arr;
 		}
@@ -503,31 +503,39 @@ namespace Prototypr {
 		}
 
 		public function path($path='', array $opts=[]) {
+			//default opts
+			$opts = array_merge([
+				'module' => '',
+				'caller' => '',
+				'relative' => false,
+				'validate' => true,
+			], $opts);
 			//set vars
 			$path = $path ?: '';
 			$baseDir = $this->config['base_dir'];
 			$modulesDir = $this->config['modules_dir'];
 			$moduleNames = array_keys($this->config['modules']);
-			//has calling module?
-			if($caller = $this->caller('file')) {
+			//check calling module?
+			if(empty($opts['module'])) {
+				//get caller
+				$caller = $opts['caller'] ?: $this->caller('file');
 				//loop through modules
 				foreach($moduleNames as $m) {
 					//match found?
 					if(strpos($caller, $modulesDir . '/' . $m . '/') === 0) {
-						array_unshift($moduleNames, $m);
-						$moduleNames = array_unique($moduleNames);
+						$opts['module'] = $m;
 						break;
 					}
 				}
 			}
+			//set module hint?
+			if($opts['module']) {
+				array_unshift($moduleNames, $opts['module']);
+				$moduleNames = array_unique($moduleNames);
+			}
 			//merge values to check
 			$checkExts = [ 'tpl' => 'tpl' ];
 			$checkPaths = array_unique(array_merge([ $this->config['theme'] ], $moduleNames, [ $baseDir ]));
-			//default opts
-			$opts = array_merge([
-				'relative' => false,
-				'validate' => true,
-			], $opts);
 			//is url?
 			if(strpos($path, '://') !== false) {
 				return $path;
@@ -582,10 +590,17 @@ namespace Prototypr {
 				'time' => false,
 				'query' => true,
 				'clean' => '',
+				'module' => '',
 			], $opts);
-			//set vars
+			//create path
+			$path = $this->path($path, [
+				'module' => $opts['module'],
+				'caller' => $this->caller('file'),
+				'validate' => false,
+				'relative' => true,
+			]);
+			//misc vars
 			$query = [];
-			$path = $this->path($path, [ 'validate' => false, 'relative' => true ]);
 			$path = trim($path ?: $this->config['url']);
 			//has query string?
 			if(strpos($path, '?') !== false) {
