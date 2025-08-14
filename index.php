@@ -2,7 +2,7 @@
 
 /**
  * Plugin Name: Prototypr
- * Plugin URI: https://github.com/codi-si/Prototypr
+ * Plugin URI: https://github.com/codi0/prototypr
  * Description: A micro php library to help develop apps quickly
  * Version: 2.0.0
 **/
