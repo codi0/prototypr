@@ -54,6 +54,10 @@ class Kernel {
 		}
 	}
 
+	public function isApi() {
+		return $this->router->checkPath($this->basePath);
+	}
+
 	public function auth() {
 		throw new \Exception("Define an inherited auth method, to use API authentication");
 	}
