@@ -258,7 +258,7 @@ class Orm {
 		}
 		//call save event?
 		if(!empty($data)) {
-			$data = $this->kernel->event('orm.save', $model, $data, $dataOld);
+			$data = $this->kernel->event('orm.save', $data, $dataOld, $model);
 		}
 		//anything to save?
 		if(!empty($data)) {
