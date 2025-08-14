@@ -184,7 +184,7 @@ namespace Prototypr {
 				//other
 				'name' => '',
 				'instance' => 'default',
-				'namespace' => null,
+				'namespace' => 'App',
 				'version' => null,
 				'theme' => null,
 				'annotations' => false,

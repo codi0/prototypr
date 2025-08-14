@@ -2,10 +2,25 @@
 
 /**
  *
- * Example module for creating routes with custom templates
+ * Example v1 module for creating routes
  *
 **/
 
+
+//stop here?
+if(PROTOTYPR_VERSION != 1) {
+	return;
+}
+
+
+//Config: app facade
+//Simplifies static calls to kernel - E.g. App::url()
+$this->facade('App', $this);
+
+//Config: set theme?
+if(!$this->config('theme')) {
+	$this->config('theme', 'theme');
+}
 
 //Route: Home
 $this->route('/', function() {
@@ -20,24 +35,6 @@ $this->route('/', function() {
 			'userId' => 1, //dummy data
 			'evil' => "alert('haha!')", //to show evil content is auto-escaped
 		],
-	]);
-});
-
-//Route: Generate UI from todos API
-$this->route('todos', function() {
-	//get TODOs endpoint
-	$endpoint = $this->url('api/v1/todos');
-	//auto generate CRUD ui screens (list, add, edit, delete) using the ApiUi class
-	//for more control, use the form and table methods directly (see the crud method internals for a usage example)
-	$output = $this->apiUi->crud($endpoint, [
-		'title' => 'Todo list',
-		'schema_url' => $endpoint . '/schema', //optionally set the schema URL, if different from the main endpoint
-	]);
-	//add custom css
-	$output->before('<style>.form-wrap .title { margin: 15px 0; }</style>');
-	//template
-	$this->tpl('output', [
-		'output' => $output,
 	]);
 });
 

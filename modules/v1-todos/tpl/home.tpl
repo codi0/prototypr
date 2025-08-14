@@ -1,0 +1,1 @@
+<p><?= $tpl->data('welcome') ?></p>

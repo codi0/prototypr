@@ -1,5 +1,18 @@
 <?php
 
+/**
+ *
+ * Example v1 module for creating a Rabbit MQ Server
+ *
+**/
+
+
+//stop here?
+if(PROTOTYPR_VERSION != 1) {
+	return;
+}
+
+
 //object registry
 $this->service('queue', function() {
 	//ensure dependency loaded
