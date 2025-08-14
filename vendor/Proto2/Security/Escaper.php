@@ -80,7 +80,7 @@ class Escaper {
 	}
 
 	protected function _ruleHtml($value, array $params) {
-		return htmlspecialchars($value, ENT_QUOTES|ENT_SUBSTITUTE, 'UTF-8', true);
+		return htmlspecialchars($value ?: '', ENT_QUOTES|ENT_SUBSTITUTE, 'UTF-8', true);
 	}
 
 	protected function _ruleAttr($value, array $params) {

@@ -55,6 +55,10 @@ class Helpers {
 		$baseDir = $config->get('paths.base');
 		$modulesDir = $config->get('paths.modules');
 		$moduleNames = array_keys($config->get('modules'));
+		//valid path?
+		if(strpos($path, ' ') !== false) {
+			return null;
+		}
 		//check calling module?
 		if(empty($opts['module'])) {
 			//get caller
@@ -139,6 +143,10 @@ class Helpers {
 			'validate' => false,
 			'relative' => true,
 		]);
+		//stop here?
+		if($path === null) {
+			return null;
+		}
 		//misc vars
 		$query = [];
 		$config = $this->kernel->config;
