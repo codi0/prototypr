@@ -2,6 +2,12 @@
 
 namespace Prototypr;
 
+class PDOStatement extends \PDOStatement {
+
+	public $params = [];
+
+}
+
 class Db extends \PDO {
 
 	protected $driver = 'mysql';
@@ -37,7 +43,9 @@ class Db extends \PDO {
 		//call parent
 		parent::__construct($dsn, $username, $password, $options);
 		//throw exceptions
-		$this->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION); 
+		$this->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
+		//set PDOstatement class
+		$this->setAttribute(\PDO::ATTR_STATEMENT_CLASS, [ __NAMESPACE__ . '\\PDOStatement' ]);
 	}
 
 	public function __get($key) {
@@ -100,7 +108,7 @@ class Db extends \PDO {
 		if(is_object($query)) {
 			$s = $query;
 			$query = $s->queryString;
-			$params = array_merge(isset($s->params) ? $s->params : [], $params);
+			$params = array_merge($s->params, $params);
 		}
 		//generate cache ID
 		$id = $query . $method . http_build_query($params);
@@ -212,7 +220,6 @@ class Db extends \PDO {
 		}
 		//cache params?
 		if($statement && is_array($options)) {
-			$statement->params = isset($statement->params) ? $statement->params : [];
 			$statement->params = array_merge($statement->params, $options);
 		}
 		//return
@@ -229,7 +236,7 @@ class Db extends \PDO {
 		//execute?
 		if(is_object($s)) {
 			//merge params
-			$params = isset($s->params) ? $s->params : $params;
+			$params = $s->params;
 			//convert params to values?
 			if(strpos($s->queryString, '?') !== false && strpos($s->queryString, ':') === false) {
 				$params = array_values($params);
@@ -245,7 +252,6 @@ class Db extends \PDO {
 				$time = microtime(true);
 				$s->execute($params);
 				$time = microtime(true) - $time;
-				//file_put_contents(__DIR__ . '/db.log', $s->queryString . ' - ' . json_encode($params) . "\n", FILE_APPEND);
 			} catch(\Exception $e) {
 				$e->debug = [ 'Query' => $s->queryString, 'Params' => $params ];
 				throw $e;
