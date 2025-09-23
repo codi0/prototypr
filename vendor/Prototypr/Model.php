@@ -170,7 +170,12 @@ class Model {
 			//set property?
 			if(isset($this->__meta['props'][$k])) {
 				$this->$k = $v;
+				unset($data[$k]);
 			}
+		}
+		//stop here?
+		if(empty($data)) {
+			return $this;
 		}
 		//check relations
 		foreach($this->__meta['relations'] as $prop => $meta) {
@@ -179,21 +184,21 @@ class Model {
 			//can set?
 			if($meta['onSet'] && $rel) {
 				//set vars
-				$tmp = $data;
+				$tmp = [];
 				$field = isset($opts['relFields'][$prop]) ? $opts['relFields'][$prop] : $prop;
 				//is proxy?
 				if($rel instanceof Proxy) {
 					$rel = $rel->__target();
 				}
 				//loop through data
-				foreach($tmp as $k => $v) {
+				foreach($data as $k => $v) {
 					//skip field?
 					if(in_array($k, $meta['skipFields'])) {
-						unset($tmp[$k]);
 						continue;
 					}
-					//update data?
+					//match found?
 					if(is_array($v) && preg_match("/(^" . $field . "$)|(\_" . $field . "$)/i", $k)) {
+						unset($data[$k]);
 						$tmp = $v;
 						break;
 					}
