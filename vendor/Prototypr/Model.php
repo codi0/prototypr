@@ -196,10 +196,10 @@ class Model {
 					if(in_array($k, $meta['skipFields'])) {
 						continue;
 					}
-					//match found?
-					if(is_array($v) && preg_match("/(^" . $field . "$)|(\_" . $field . "$)/i", $k)) {
+					//field matched?
+					if(preg_match("/(^" . $field . "$)|(\_" . $field . "$)/i", $k)) {
 						unset($data[$k]);
-						$tmp = $v;
+						$tmp = is_array($v) ? $v : [];
 						break;
 					}
 				}
@@ -387,7 +387,7 @@ class Model {
 				'onSet' => true,
 				'onValidate' => true,
 				'onSave' => true,
-				'onDelete' => true,
+				'onDelete' => false,
 				'skipFields' => [],
 				'if' => [],
 			];
