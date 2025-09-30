@@ -308,12 +308,14 @@ class Model {
 		$type = $this->__meta['props'][$key]['type'];
 		$orgVal = $this->__meta['props'][$key]['value'];
 		//scalar mis-match?
-		if(!is_null($orgVal) && is_scalar($orgVal) !== is_scalar($val)) {
-			return $orgVal;
+		if(!is_null($orgVal) && !is_null($val)) {
+			if(is_scalar($orgVal) !== is_scalar($val)) {
+				return $orgVal;
+			}
 		}
 		//cast by type
 		if($type === 'string') {
-			$val = trim($val);
+			$val = trim($val ?: '');
 		} else if($type === 'integer') {
 			$val = $val ?: 0;
 		} else if($type === 'double') {
@@ -421,7 +423,7 @@ class Model {
 				$meta['props'][$name] = [
 					'type' => $prop['type'],
 					'value' => $prop['value'],
-					'null' => true,
+					'null' => (strtolower($prop['type']) === 'null'),
 					'filters' => [],
 					'rules' => [],
 				];

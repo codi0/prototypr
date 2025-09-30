@@ -169,7 +169,6 @@ class Orm {
 		$data = [];
 		$dataOld = [];
 		$result = null;
-		$allEmpty = true;
 		$class = get_class($model);
 		$table = $this->dbTable($class);
 		$meta = $this->classMeta($class, [ 'object' => $model ]);
@@ -181,6 +180,7 @@ class Orm {
 		$idVal = $model->{$meta['id']};
 		$changeCacheKey = spl_object_hash($model);
 		$modelCacheKey = $this->formatKey($class, [ $meta['id'] => $idVal ]);
+		$allEmpty = empty($idVal);
 		//get public data
 		if($model instanceOf Model && $idVal) {
 			//use change cache?
