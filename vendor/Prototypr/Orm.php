@@ -289,7 +289,7 @@ class Orm {
 				$this->changeCache[$changeCacheKey] = [];
 				//sync relations
 				foreach($meta['relations'] as $k => $v) {
-					$model->$k = $this->syncRelation($model, $k, $v);
+					$model->$k = $this->syncRelation($model, $k, $v, true);
 				}
 			}
 		}
@@ -414,7 +414,7 @@ class Orm {
 		return $result;
 	}
 
-	protected function syncRelation($model, $prop, array $meta) {
+	protected function syncRelation($model, $prop, array $meta, $isUpdate=false) {
 		//check conditionals
 		foreach($meta['if'] as $k => $v) {
 			//skip relation?
@@ -440,9 +440,16 @@ class Orm {
 			}
 			//is model?
 			if($relation instanceOf Model) {
-				//loop through conditions
-				foreach($meta['where'] as $k => $v) {
-					$relation->$k = $v;
+				//replace relation?
+				if(isset($meta['where']['id']) && $meta['where']['id'] != $relation->id) {
+					if($meta['where']['id']) {
+						$relation = $this->load($meta['model'], $meta['where']);
+					}
+				} else {
+					//loop through conditions
+					foreach($meta['where'] as $k => $v) {
+						$relation->$k = $v;
+					}
 				}
 			}
 		} else {
