@@ -331,6 +331,52 @@ class Crypt {
 		return $decrypted;
 	}
 
+	public function jwkToPemPublicKey($n, $e) {
+		//Base64url decode helper
+		$b64urlDecode = function($data) {
+			$data = strtr($data, '-_', '+/');
+			$pad = strlen($data) % 4;
+			if ($pad > 0) {
+				$data .= str_repeat('=', 4 - $pad);
+			}
+			return base64_decode($data);
+		};
+		//ASN.1 DER encoding helper
+		$encodeLength = function($length) {
+			if ($length <= 0x7F) {
+				return chr($length);
+			}
+			$temp = ltrim(pack('N', $length), "\x00");
+			return chr(0x80 | strlen($temp)) . $temp;
+		};
+		//ASN.1 DER encoding helper
+		$encodeInteger = function($value) use($encodeLength) {
+			// Ensure leading zero if MSB is set (signed integer fix)
+			if (ord($value[0]) > 0x7F) {
+				$value = "\x00" . $value;
+			}
+			return "\x02" . $encodeLength(strlen($value)) . $value;
+		};
+		//decode elements
+		$modulus = $b64urlDecode($n);
+		$exponent = $b64urlDecode($e);
+		//ASN.1 DER encode elements
+		$mod = $encodeInteger($modulus);
+		$exp = $encodeInteger($exponent);
+		//sequence of modulus + exponent
+		$rsaPublicKey = "\x30" . $encodeLength(strlen($mod . $exp)) . $mod . $exp;
+		//wrap in SubjectPublicKeyInfo
+		$algoOid = "\x30\x0D\x06\x09\x2A\x86\x48\x86\xF7\x0D\x01\x01\x01\x05\x00";
+		$bitString = "\x03" . $encodeLength(strlen($rsaPublicKey) + 1) . "\x00" . $rsaPublicKey;
+		$spki = "\x30" . $encodeLength(strlen($algoOid . $bitString)) . $algoOid . $bitString;
+		//convert to PEM
+		$pem = "-----BEGIN PUBLIC KEY-----\n";
+		$pem .= chunk_split(base64_encode($spki), 64, "\n");
+		$pem .= "-----END PUBLIC KEY-----\n";
+		//return
+		return $pem;
+	}
+
 	public function serverKey($id, $length=16) {
 		//format id
 		$id = str_replace('.', '-', $id);

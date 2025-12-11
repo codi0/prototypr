@@ -29,27 +29,9 @@ class Jwt {
 		}
 	}
 
-	public function build(array $claims, $signKey, $isPublic) {
-		//set algorithm
-		$algo = $isPublic ? 'RS256' : 'HS256';
-		//build JWT
-		return $this->buildRaw(array(), $claims, $signKey, $algo);
-	}
-
-	public function parse($jwt, $signKey, $isPublic, $aud=null) {
-		//set algorithm
-		$algo = $isPublic ? 'RS256' : 'HS256';
-		//parse JWT
-		return $this->parseRaw($jwt, $signKey, $algo, $aud);
-	}
-
-	public function buildRaw(array $headers, array $claims, $signKey, $algo) {
-		//valid input?
-		if(!$algo || (!$signKey && $algo !== 'none') || ($signKey && $algo === 'none')) {
-			throw new \Exception('Invalid $signKey and $algo combination');
-		}
+	public function encode(array $claims, $signKey, $alg, array $headers=[]) {
 		//set default headers
-		$headers['alg'] = $algo;
+		$headers['alg'] = $alg;
 		$headers['typ'] = isset($headers['typ']) ? $headers['typ'] : 'JWT';
 		//build segments
 		$segments = array(
@@ -58,7 +40,7 @@ class Jwt {
 			2 => '',
 		);
 		//generate signature?
-		if($algo !== 'none') {
+		if($headers['alg'] !== 'none') {
 			//data to sign
 			$data = $segments[0] . '.' . $segments[1];
 			$sigMethod = (stripos($headers['alg'], 'H') === 0) ? 'sign' : 'signRsa';
@@ -72,11 +54,7 @@ class Jwt {
         return implode('.', $segments);
 	}
 
-	public function parseRaw($jwt, $signKey, $algo, $aud=null) {
-		//valid input?
-		if(!$algo || (!$signKey && $algo !== 'none') || ($signKey && $algo === 'none')) {
-			throw new \Exception('Invalid $signKey and $algo combination');
-		}
+	public function decode($jwt, $signKey, $alg=null, $aud=null) {
 		//get segments
 		$segments = explode('.', $jwt);
 		//has 3 segments?
@@ -91,8 +69,12 @@ class Jwt {
 		if(!is_array($headers) || !is_array($claims)) {
 			return false;
 		}
-		//alg header matched?
-		if(!isset($headers['alg']) || $headers['alg'] !== $algo) {
+		//alg header present?
+		if(!isset($headers['alg']) || !$headers['alg']) {
+			return false;
+		}
+		//alg header matches?
+		if($alg && $alg !== $headers['alg']) {
 			return false;
 		}
 		//should signature be empty?
@@ -104,6 +86,16 @@ class Jwt {
 			//data to verify
 			$data = $segments[0] . '.' . $segments[1];
 			$sigMethod = (stripos($headers['alg'], 'H') === 0) ? 'verify' : 'verifyRsa';
+			//format sign key?
+			if(is_array($signKey)) {
+				$n = isset($signKey['n']) ? $signKey['n'] : '';
+				$e = isset($signKey['e']) ? $signKey['e'] : '';
+				$signKey = $this->crypt->jwkToPemPublicKey($n, $e);
+			}
+			//valid sign key?
+			if(!$signKey) {
+				return false;
+			}
 			//run verification
 			$isValid = $this->crypt->$sigMethod($data, $signature, $signKey, array(
 				'hash' => 'sha' . preg_replace('/[^0-9]/', '', $headers['alg']),
