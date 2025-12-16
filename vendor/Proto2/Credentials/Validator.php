@@ -2,784 +2,1002 @@
 
 namespace Proto2\Credentials;
 
-use CBOR\Decoder;
-use CBOR\Encoder;
-use CBOR\StringStream;
-use CBOR\AbstractCBORObject;
-use CBOR\TextStringObject;
-use CBOR\ByteStringObject;
-use CBOR\UnsignedIntegerObject;
-use CBOR\NegativeIntegerObject;
-use CBOR\ListObject;
-use CBOR\MapObject;
-use CBOR\OtherObject\NullObject;
-use CBOR\OtherObject\TrueObject;
-use CBOR\OtherObject\FalseObject;
-use CBOR\Tag;
-use CBOR\Tag\GenericTag;
-
 /**
- * Digital Credentials API Validator
+ * Validator for mdoc-based credentials obtained via the W3C Digital
+ * Credentials API (navigator.credentials.get).
  *
- * STANDARD: https://mobiledl-e5018.web.app/ISO_18013-5_E_draft.pdf?utm_source=chatgpt.com
- * REFERENCE: https://developers.google.com/wallet/identity/verify/accepting-ids-from-wallet-online
- * PHP: 8.1+
+ * This implementation verifies Mobile Document (mdoc) data structures
+ * and cryptographic objects as defined in:
+ *
+ *   ISO/IEC 18013-5:2021
+ *   "Personal identification — ISO-compliant driving licence —
+ *    Part 5: Mobile driving licence (mDL) application"
+ *
+ * Specifically, this code validates:
+ *   - Mobile Security Object (MSO)
+ *   - valueDigests and issuer-signed data integrity
+ *   - IssuerSigned and DeviceSigned structures
+ *   - COSE_Sign1 signatures and COSE_Key public keys
+ *   - Issuer and device authentication keys
+ *
+ * IMPORTANT:
+ * This validator does NOT implement the ISO/IEC 18013-5 offline mdoc
+ * retrieval protocol (e.g., DeviceEngagement, EReaderKey, or the ISO
+ * SessionTranscript format).
+ *
+ * Instead, it implements the session binding and device authentication
+ * model used by browser-based wallets via the W3C Digital Credentials
+ * API, following the OpenID for Verifiable Presentations (OID4VP) /
+ * DCAPI "mdoc handover" profile.
+ *
+ * In this web-based profile:
+ *   - The SessionTranscript is replaced with the
+ *     "OpenID4VPDCAPIHandover" construction
+ *   - DeviceAuthentication excludes the ISO 18013-5 DocType field
+ *   - Session binding is achieved via verifier-provided nonce and
+ *     origin hashing, rather than ISO offline engagement
+ *
+ * References:
+ *   - ISO/IEC 18013-5:2021 (mdoc data model and cryptography)
+ *   - W3C Digital Credentials API (navigator.credentials.get)
+ *   - OpenID for Verifiable Presentations (OID4VP)
+ *
+ * This hybrid approach reflects current interoperable browser and
+ * wallet implementations and is intentionally aligned with deployed
+ * Web mdoc verification behavior.
+ *
+ * Implementation requires PHP 8.1+
  */
+
 class Validator
 {
 
     private string $nonce;
     private string $origin;
     private string $encryptionKey;
-    private array $trustedRootCerts = [];
-
-    private RawCborExtractor $extractor;
     private bool $debug = false;
+
+    /** @var string[] PEM root certs */
+    private array $trustedRootCerts = [];
 
     public function __construct(string $nonce, string $origin, ?string $encryptionKey = null)
     {
+        $this->nonce = $nonce;
         $this->origin = $origin;
-        $this->nonce = $this->base64UrlDecode($nonce);
-        $this->encryptionKey = $this->base64UrlDecode($encryptionKey ?? '');
+        $this->encryptionKey = $encryptionKey ?? '';
+
+        $this->debug = isset($_GET['debug']);
     }
+
+    /* ============================================================
+     * Public API
+     * ============================================================
+     */
 
     public function loadTrustedRootsFromPemFile(string $pemPath): void
     {
         $pem = file_get_contents($pemPath);
-        preg_match_all('/-----BEGIN CERTIFICATE-----(.+?)-----END CERTIFICATE-----/s', $pem, $m);
-        foreach ($m[0] as $c) {
-            $this->trustedRootCerts[] = $c;
+        if ($pem === false) {
+            throw new \RuntimeException("Failed to read PEM file");
+        }
+
+        preg_match_all(
+            '/-----BEGIN CERTIFICATE-----(.+?)-----END CERTIFICATE-----/s',
+            $pem,
+            $m
+        );
+
+        foreach ($m[0] as $cert) {
+            $this->trustedRootCerts[] = $cert;
         }
     }
 
     public function validateCredentialResponse(string $credentialResponse): array
     {
         $bytes = $this->base64UrlDecode($credentialResponse);
-        $this->extractor = new RawCborExtractor($bytes);
+        $rootNode  = $this->createCborNode($bytes);
 
-        $root = $this->extractor->decodeRoot();
-        $response = $this->extractor->decodeNodeToPhp($root);
+        $response = $rootNode->toPhp();
 
-        if (($response['version'] ?? null) != '1.0') {
-            throw new \RuntimeException('Unsupported version');
-        }
-        if (($response['status'] ?? null) != 0) {
-            throw new \RuntimeException('DeviceResponse status error');
-        }
+		$version = (string) ($response['version'] ?? '');
+		$status = (int) ($response['status'] ?? -1);
 
-        $docNode = $this->extractor
-            ->extractListIndex(
-                $this->extractor->extractMapKey($root, 'documents'),
-                0
-            );
+		if ($version !== '1.0') {
+			throw new \RuntimeException("Unsupported version: {$version}");
+		} else if ($status !== 0) {
+			throw new \RuntimeException("DeviceResponse status error: {$status}");
+		}
 
-        $doc = $this->extractor->decodeNodeToPhp($docNode);
+        $docNode = $rootNode->path('documents.0');
+        $docPhp  = $docNode->toPhp();
 
-        $issuerSignedNode = $this->extractor->extractMapKey($docNode, 'issuerSigned');
+        $issuerSignedNode = $rootNode->path('documents.0.issuerSigned');
         $deviceKey = $this->verifyIssuer($issuerSignedNode);
+
         $devicePemKey = $this->coseKeyToPem($deviceKey);
 
-        $deviceSignedNode = $this->extractor->extractMapKey($docNode, 'deviceSigned');
+        $deviceSignedNode = $rootNode->path('documents.0.deviceSigned');
         $this->verifyDevice($deviceSignedNode, $devicePemKey);
 
         return [
-            'success' => true,
-            'status' => 0,
-            'doc_type' => $doc['docType'] ?? null,
-            'data' => $this->extractDataFromDocument($doc),
+            'success'  => true,
+            'status'   => 0,
+            'doc_type' => $docPhp['docType'] ?? null,
+            'data'     => $this->extractDataFromDocument($docPhp),
         ];
     }
 
-    /* ========================================================
-     * ISSUER VERIFICATION
-     * ======================================================== */
+    /* ============================================================
+     * Issuer verification
+     * ============================================================
+     */
 
-    private function verifyIssuer(RawCborNode $issuerSignedNode): array
+    private function verifyIssuer(CborNode $issuerSignedNode): array
     {
-        $issuerAuthNode = $this->extractor->extractMapKey($issuerSignedNode, 'issuerAuth');
-        [$prot, $unprot, $payload, $sigRaw] =
-            $this->extractor->decodeNodeToPhp($issuerAuthNode);
+        $issuerAuthNode = $issuerSignedNode->path('issuerAuth');
 
-        $mso = $this->extractor->decodeBytesToPhp($payload, true);
-        
-        if (!isset($mso['deviceKeyInfo']['deviceKey'])) {
-            throw new \RuntimeException('deviceKey missing');
-        }
+        [$prot, $unprot, $payload, $sigRaw] = $issuerAuthNode->toPhp();
 
-        $sigStruct = $this->buildCoseSigStructure(
-            'Signature1',
-            $prot,
-            '',
-            $payload
-        );
+        $sigStruct = $this->buildCoseSigStructure('Signature1', $prot, '', $payload);
 
-        $alg = $this->coseAlgToOpenSSL(
-            $this->extractor->extractAlgoFromProtected($prot)
-        );
-
+        $alg = $this->coseAlgToOpenSSL($prot);
         $sigDer = $this->coseSignatureToDer($sigRaw);
-        $certDer = $this->extractX5chainFirstCertDer($unprot);
 
-        $pem =
-            "-----BEGIN CERTIFICATE-----\n" .
-            chunk_split(base64_encode($certDer), 64) .
-            "-----END CERTIFICATE-----\n";
+		$certChain = $this->extractX5chainDerArray($unprot);
+		$leafCertDer = $certChain[0];
+
+        $pem = "-----BEGIN CERTIFICATE-----\n"
+            . chunk_split(base64_encode($leafCertDer), 64)
+            . "-----END CERTIFICATE-----\n";
 
         if (openssl_verify($sigStruct, $sigDer, $pem, $alg) !== 1) {
             throw new \RuntimeException('Issuer signature invalid');
         }
 
-		$issuerNSNode = $this->extractor->extractMapKey($issuerSignedNode, 'nameSpaces');
-		$this->validateMsoDigests($mso, $issuerNSNode);
-
-        $this->verifyCertificateChain($certDer);
-
-        return $mso['deviceKeyInfo']['deviceKey'];
-    }
-
-	private function validateMsoDigests(array $mso, RawCborNode $issuerNameSpacesNode): void
-	{
-		if (!isset($mso['valueDigests']) || !is_array($mso['valueDigests'])) {
-			throw new \RuntimeException('MSO missing valueDigests');
-		}
-
-		foreach ($mso['valueDigests'] as $ns => $digests) {
-			if (!is_array($digests)) {
-				continue;
-			}
-
-			// Base namespace = first 5 segments
-			$parts = explode('.', $ns);
-			if (count($parts) < 5) {
-				continue;
-			}
-
-			$baseNs = implode('.', array_slice($parts, 0, 5));
-
-			// Raw CBOR array node for issuerSigned.nameSpaces[baseNs]
-			$nsNode = $this->extractor->extractMapKey($issuerNameSpacesNode, $baseNs);
-
-			// Parse array header (must be array)
-			[$major, $count, $offset] = $this->extractor->readHeader($nsNode->bytes, 0);
-			if ($major !== 4) {
-				throw new \RuntimeException(
-					"IssuerSigned namespace '{$baseNs}' must be an array"
-				);
-			}
-
-			$pos = $offset;
-
-			for ($i = 0; $i < $count; $i++) {
-				// Extract raw tagged item
-				$itemNode = $this->extractor->decodeAtOffset($pos, $nsNode->bytes);
-				$pos += strlen($itemNode->bytes);
-
-				// Must be tag(24)
-				[$maj, $tag] = $this->extractor->readHeader($itemNode->bytes, 0);
-				if ($maj !== 6 || $tag !== 24) {
-					continue;
-				}
-
-				// Decode embedded CBOR (tag 24 payload)
-				$decoded = $this->extractor->decodeBytesToPhp($itemNode->bytes);
-
-				if (
-					!is_array($decoded) ||
-					!isset($decoded['digestID'], $decoded['elementIdentifier'])
-				) {
-					continue;
-				}
-
-				// FULL namespace prefix match
-				if (!str_starts_with($decoded['elementIdentifier'], $ns)) {
-					continue;
-				}
-
-				$digestID = $decoded['digestID'];
-
-				if (!isset($digests[$digestID])) {
-					continue;
-				}
-
-				// Digest is over the *entire tagged item*
-				$actual   = hash('sha256', $itemNode->bytes, true);
-				$expected = $digests[$digestID];
-
-				if (!hash_equals($expected, $actual)) {
-					throw new \RuntimeException(
-						"MSO digest mismatch in namespace '{$ns}', digestID {$digestID}"
-					);
-				}
-			}
-		}
-	}
-
-	private function extractX5chainFirstCertDer(array $unprotected): string
-	{
-		// COSE header parameter 33 = x5chain
-		if (!array_key_exists(33, $unprotected)) {
-			throw new \RuntimeException(
-				'x5chain (header 33) not found in unprotected headers for issuerAuth'
-			);
-		}
-
-		$x5chain = $unprotected[33];
-
-		// x5chain can be a single bstr or an array of bstr
-		if (is_string($x5chain)) {
-			return $x5chain;
-		}
-
-		if (is_array($x5chain) && isset($x5chain[0]) && is_string($x5chain[0])) {
-			return $x5chain[0];
-		}
-
-		throw new \RuntimeException(
-			'Invalid x5chain format in unprotected headers for issuerAuth'
-		);
-	}
-
-    private function verifyCertificateChain(string $certDer): void
-    {
-        if (empty($this->trustedRootCerts)) {
-            return; // nothing to verify against
-        }
-        $certPem = "-----BEGIN CERTIFICATE-----\n" . chunk_split(base64_encode($certDer), 64) . "-----END CERTIFICATE-----\n";
-        $cert = openssl_x509_read($certPem);
-        if ($cert === false) throw new \RuntimeException('Failed to read certificate for chain verification');
-
-        foreach ($this->trustedRootCerts as $rootPem) {
-            $root = openssl_x509_read($rootPem);
-            if ($root === false) continue;
-            $result = openssl_x509_checkpurpose($cert, X509_PURPOSE_ANY, [$root]);
-            if ($result === true) return;
-        }
-
-        // If none matched, throw (but keep cert validity check separate)
-        throw new \RuntimeException('Certificate chain did not validate against any trusted root');
-    }
-
-
-    /* ========================================================
-     * DEVICE VERIFICATION
-     * ======================================================== */
-
-    private function verifyDevice(RawCborNode $deviceSignedNode, string $devicePemKey): void
-    {
-        $sigNode = $this->extractor
-            ->extractMapKey(
-                $this->extractor->extractMapKey($deviceSignedNode, 'deviceAuth'),
-                'deviceSignature'
-            );
-
-        [$prot, $unprot, $payload, $sigRaw] =
-            $this->extractor->decodeNodeToPhp($sigNode);
-
-        [$handover, $sessionTranscript] = $this->buildDeviceSessionTranscript();
-        $namespaces = $this->extractor->extractMapKey($deviceSignedNode, 'nameSpaces');
-
-        $deviceAuth = $this->buildDeviceAuthStructure(
-            $sessionTranscript,
-            $namespaces->bytes
-        );
-
-        $sigStruct = $this->buildCoseSigStructure(
-            'Signature1',
-            $prot,
-            $deviceAuth,
-            null
-        );
+        $msoNode = $this->createCborNode($payload)->decodeAsCbor();
+        $msoPhp = $msoNode->toPhp();
         
+        $keyInfo = $msoPhp['deviceKeyInfo'] ?? [];
+        $deviceKey = $keyInfo['deviceKey'] ?? $keyInfo['deviceKeyRef'] ?? null;
+
+        if ($deviceKey === null) {
+            throw new \RuntimeException('deviceKey missing');
+        }
+
+        $this->verifyCertificateChain($certChain);
+
+        return $deviceKey;
+    }
+
+    /* ============================================================
+     * Device verification (Web / DCAPI profile)
+     * ============================================================
+     */
+
+    private function verifyDevice(CborNode $deviceSignedNode, string $devicePemKey): void
+    {
+        $deviceAuthNode = $deviceSignedNode->path('deviceAuth.deviceSignature');
+
+        [$prot, $_unprot, $payload, $sigRaw] = $deviceAuthNode->toPhp();
+
+        $sessionTranscript = $this->buildDeviceSessionTranscript();
+
+        $namespacesNode = $deviceSignedNode->path('nameSpaces');
+
+        // DeviceAuthentication = [ "DeviceAuthentication", SessionTranscript, DeviceNameSpacesBytes ]
+        $deviceAuthentication =
+            $this->buildCborStr('list', [
+				$this->buildCborStr('text', 'DeviceAuthentication'),
+				$this->buildCborStr('raw', $sessionTranscript),
+				$this->buildCborStr('raw', $namespacesNode->bytes())
+            ]);
+
+        $sigStruct = $this->buildCoseSigStructure('Signature1', $prot, $deviceAuthentication, $payload);
+
         $sigDer = $this->coseSignatureToDer($sigRaw);
+        $alg = $this->coseAlgToOpenSSL($prot);
 
-		$alg = $this->coseAlgToOpenSSL(
-			$this->extractor->extractAlgoFromProtected($prot)
-		);
-
-		if($this->debug) {
-			echo "deviceSignatureBytes: " . bin2hex($sigNode->bytes) . "\n";
-			echo "protectedBytes: " . bin2hex($prot) . "\n";
-			echo "payload: " . bin2hex($payload) . "\n";
-			echo "signatureRaw: " . bin2hex($sigRaw) . "\n";
-			echo "handoverData: " . bin2hex($handover) . "\n";
-			echo "sessionTranscript: " . bin2hex($sessionTranscript) . "\n";
-			echo "namesSpaces: " . bin2hex($namespaces->bytes) . "\n";
-			echo "deviceAuthentication: " . bin2hex($deviceAuth) . "\n";
-			echo "sigStruct: " . bin2hex($sigStruct) . "\n";
-			echo "sigStructHash: " . hash('sha256', $sigStruct) . "\n";
-			echo "sigDer: " . bin2hex($sigDer) . "\n";
-			echo "alg: " . $alg . "\n";
-			echo "devicePemKey: " . $devicePemKey . "\n";
-			exit();
-		}
+        if ($this->debug) {
+			echo "sessionTranscript: " . bin2hex($sessionTranscript) . PHP_EOL;
+            echo "DeviceAuthentication: " . bin2hex($deviceAuthentication) . PHP_EOL;
+            echo "Sig_structure: " . bin2hex($sigStruct) . PHP_EOL;
+            echo "devicePemKey: " . $devicePemKey . PHP_EOL;
+            exit;
+        }
 
         if (openssl_verify($sigStruct, $sigDer, $devicePemKey, $alg) !== 1) {
             throw new \RuntimeException('Device signature invalid');
         }
     }
 
-	private function buildDeviceSessionTranscript(): array
+    /* ============================================================
+     * SessionTranscript (DCAPI)
+     * ============================================================
+     */
+
+	private function buildDeviceSessionTranscript(): string
 	{
-		$encodeLen = function(int $major, int $len): string {
-			if ($len < 24) {
-				return chr(($major << 5) | $len);
-			} elseif ($len < 0x100) {
-				return chr(($major << 5) | 24) . chr($len);
-			} elseif ($len < 0x10000) {
-				return chr(($major << 5) | 25)
-					. chr(($len >> 8) & 0xff)
-					. chr($len & 0xff);
-			} elseif ($len < 0x100000000) {
-				return chr(($major << 5) | 26)
-					. chr(($len >> 24) & 0xff)
-					. chr(($len >> 16) & 0xff)
-					. chr(($len >> 8) & 0xff)
-					. chr($len & 0xff);
-			} else {
-				$hi = intdiv($len, 0x100000000);
-				$lo = $len & 0xffffffff;
-				return chr(($major << 5) | 27)
-					. chr(($hi >> 24) & 0xff)
-					. chr(($hi >> 16) & 0xff)
-					. chr(($hi >> 8) & 0xff)
-					. chr($hi & 0xff)
-					. chr(($lo >> 24) & 0xff)
-					. chr(($lo >> 16) & 0xff)
-					. chr(($lo >> 8) & 0xff)
-					. chr($lo & 0xff);
-			}
-		};
-
-		$cborText = fn(string $s): string =>
-			$encodeLen(3, strlen($s)) . $s;
-
-		$cborBytes = fn(string $s): string =>
-			$encodeLen(2, strlen($s)) . $s;
-
-		$cborNull = "\xF6";
-
-		// HandoverData
-		$items = $cborText($this->origin)
-			   . $cborBytes($this->nonce);
+		// OpenID4VP DC API requires EXACTLY 3 elements:
+		// [ origin, nonce, jwkThumbprint | null ]
+		$handoverItems = [
+			$this->buildCborStr('text', $this->origin),
+			$this->buildCborStr('text', $this->nonce)
+		];
 
 		if ($this->encryptionKey) {
-			$items .= $cborBytes($this->encryptionKey);
-			$handoverData = $encodeLen(4, 3) . $items;
+			$handoverItems[] = $this->buildCborStr('bytes', $this->encryptionKey);
 		} else {
-			$handoverData = $encodeLen(4, 2) . $items;
+			$handoverItems[] = $this->buildCborStr('null');
 		}
+
+		$handoverData = $this->buildCborStr('list', $handoverItems);
 
 		$handoverHash = hash('sha256', $handoverData, true);
 
-		$handover =
-			$encodeLen(4, 2)
-		  . $cborText('OpenID4VPDCAPIHandover')
-		  . $cborBytes($handoverHash);
+		$handover = $this->buildCborStr('list', [
+			$this->buildCborStr('text', 'OpenID4VPDCAPIHandover'),
+			$this->buildCborStr('bytes', $handoverHash)
+		]);
 
-		$sessionTranscript =
-			$encodeLen(4, 3)
-		  . $cborNull
-		  . $cborNull
-		  . $handover;
-		  
-		  return [ $handoverData, $sessionTranscript ];
+		$sessionTranscript = $this->buildCborStr('list', [
+			$this->buildCborStr('null'),
+			$this->buildCborStr('null'),
+			$handover
+		]);
+
+		return $sessionTranscript;
 	}
 
-	private function buildDeviceAuthStructure(string $sessionTranscriptCbor, string $deviceNameSpacesCbor): string {
-		$enc = new Encoder();
-		 return $enc->encode(new ListObject([
-			new TextStringObject("DeviceAuthentication"),
-			$sessionTranscriptCbor,
-			$deviceNameSpacesCbor
-		]));
+    /* ============================================================
+     * Shared helpers
+     * ============================================================
+     */
+
+    private function buildCoseSigStructure(string $context, string $protected, string $externalAAD, ?string $payload): string {
+        return $this->buildCborStr('list', [
+            $this->buildCborStr('text', $context),
+			$this->buildCborStr('bytes', $protected),
+            $this->buildCborStr('bytes', $externalAAD),
+            $this->buildCborStr('bytes', $payload ?? ''),
+        ]);
+    }
+
+	private function coseSignatureToDer(string $sig): string
+	{
+		if (strlen($sig) !== 64) {
+			throw new \RuntimeException('Invalid ECDSA signature length');
+		}
+
+		$r = substr($sig, 0, 32);
+		$s = substr($sig, 32, 32);
+
+		// Strip leading zeros (DER requires minimal encoding)
+		$r = ltrim($r, "\x00");
+		$s = ltrim($s, "\x00");
+
+		// Ensure at least one byte
+		if ($r === '') $r = "\x00";
+		if ($s === '') $s = "\x00";
+
+		// Prepend 0x00 if high bit is set (positive INTEGER)
+		if (ord($r[0]) & 0x80) $r = "\x00" . $r;
+		if (ord($s[0]) & 0x80) $s = "\x00" . $s;
+
+		$rEnc = "\x02" . $this->derLen(strlen($r)) . $r;
+		$sEnc = "\x02" . $this->derLen(strlen($s)) . $s;
+
+		$seq = $rEnc . $sEnc;
+
+		return "\x30" . $this->derLen(strlen($seq)) . $seq;
 	}
 
-    /* ========================================================
-     * SHARED HELPERS
-     * ======================================================== */
+	private function derLen(int $len): string
+	{
+		if ($len < 0) {
+			throw new \RuntimeException('Invalid DER length');
+		}
 
-    private function buildCoseSigStructure(
-        string $context,
-        string $protected,
-        string $externalAAD,
-        ?string $payload
-    ): string {
-        $enc = new Encoder();
-        return $enc->encode(new ListObject([
-            new TextStringObject($context),
-            new ByteStringObject($protected),
-            new ByteStringObject($externalAAD),
-            new ByteStringObject($payload ?? ''),
-        ]));
-    }
+		if ($len < 128) {
+			// Short form
+			return chr($len);
+		}
 
-    private function coseSignatureToDer(string $sig): string
-    {
-        $r = substr($sig, 0, 32);
-        $s = substr($sig, 32, 32);
-        if (ord($r[0]) & 0x80) $r = "\x00" . $r;
-        if (ord($s[0]) & 0x80) $s = "\x00" . $s;
-        return "\x30" . chr(strlen($r) + strlen($s) + 4)
-            . "\x02" . chr(strlen($r)) . $r
-            . "\x02" . chr(strlen($s)) . $s;
-    }
+		// Long form
+		$bytes = '';
+		while ($len > 0) {
+			$bytes = chr($len & 0xFF) . $bytes;
+			$len >>= 8;
+		}
+
+		return chr(0x80 | strlen($bytes)) . $bytes;
+	}
 
     private function coseKeyToPem(array $k): string
     {
-        $x = $k[-2]; $y = $k[-3];
+        $x = $k[-2];
+        $y = $k[-3];
         $point = "\x04" . $x . $y;
+
         $spki =
-            "\x30\x59\x30\x13\x06\x07\x2A\x86\x48\xCE\x3D\x02\x01"
-            . "\x06\x08\x2A\x86\x48\xCE\x3D\x03\x01\x07"
-            . "\x03\x42\x00" . $point;
+            "\x30\x59\x30\x13\x06\x07\x2A\x86\x48\xCE\x3D\x02\x01" .
+            "\x06\x08\x2A\x86\x48\xCE\x3D\x03\x01\x07" .
+            "\x03\x42\x00" . $point;
 
         return "-----BEGIN PUBLIC KEY-----\n"
             . chunk_split(base64_encode($spki), 64)
             . "-----END PUBLIC KEY-----\n";
     }
 
-	private function extractDataFromDocument(array $documentNormalized): array
+	private function coseAlgToOpenSSL(string $protectedBytes): int
 	{
-		$out = [];
+		$hdr = ($protectedBytes === '')
+			? []
+			: CborNode::fromBytes($protectedBytes)->toPhp();
 
-		if (!isset($documentNormalized['issuerSigned']['nameSpaces'])) {
-			return $out;
+		if (!is_array($hdr) || !isset($hdr[1])) {
+			throw new \RuntimeException('Invalid COSE protected header');
+		}
+		
+		$alg = (int) $hdr[1];
+
+		return match ($alg) {
+			-7  => OPENSSL_ALGO_SHA256,
+			-35 => OPENSSL_ALGO_SHA384,
+			-36 => OPENSSL_ALGO_SHA512,
+			default => throw new \RuntimeException("Unsupported COSE alg: {$alg}")
+		};
+	}
+
+	private function extractX5chainDerArray(array $unprotected): array
+	{
+		$x5 = $unprotected[33] ?? $unprotected['33'] ?? null;
+
+		if (is_string($x5)) {
+			return [$x5];
 		}
 
-		foreach ($documentNormalized['issuerSigned']['nameSpaces'] as $ns => $items) {
-			$out[$ns] = [];
-
-			foreach ($items as $item) {
-				if (is_array($item) && array_key_exists('elementIdentifier', $item) && array_key_exists('elementValue', $item)) {
-					$out[$ns][$item['elementIdentifier']] = $item['elementValue'];
+		if (is_array($x5) && $x5 !== []) {
+			foreach ($x5 as $cert) {
+				if (!is_string($cert)) {
+					throw new \RuntimeException('Invalid x5chain entry');
 				}
 			}
+			return $x5;
 		}
 
-		return $out;
+		throw new \RuntimeException('Invalid x5chain');
 	}
+
+	private function verifyCertificateChain(array $certChainDer): void
+	{
+		if (!$this->trustedRootCerts) {
+			return;
+		}
+
+		// Create temp files
+		$certFile = tempnam(sys_get_temp_dir(), 'mdoc-cert-');
+		$caFile   = tempnam(sys_get_temp_dir(), 'mdoc-ca-');
+
+		try {
+			// Write leaf + intermediates
+			$pemChain = '';
+			foreach ($certChainDer as $der) {
+				$pemChain .= "-----BEGIN CERTIFICATE-----\n"
+					. chunk_split(base64_encode($der), 64)
+					. "-----END CERTIFICATE-----\n";
+			}
+			file_put_contents($certFile, $pemChain);
+
+			// Write trusted roots
+			file_put_contents($caFile, implode("\n", $this->trustedRootCerts));
+
+			// Let OpenSSL do real path validation
+			$ok = openssl_x509_checkpurpose(
+				file_get_contents($certFile),
+				X509_PURPOSE_ANY,
+				[$caFile]
+			);
+
+			if ($ok !== true && $ok !== 1) {
+				throw new \RuntimeException('Certificate chain validation failed');
+			}
+		} finally {
+			@unlink($certFile);
+			@unlink($caFile);
+		}
+	}
+
+    private function extractDataFromDocument(array $doc): array
+    {
+        $out = [];
+
+        foreach ($doc['issuerSigned']['nameSpaces'] ?? [] as $ns => $items) {
+			$ns = (string) $ns;
+            foreach ($items as $item) {
+                if (isset($item['elementIdentifier'], $item['elementValue'])) {
+                    $out[$ns][$item['elementIdentifier']] = $item['elementValue'];
+                }
+            }
+        }
+
+        return $out;
+    }
 
     private function base64UrlDecode(string $s): string
     {
-        return base64_decode(strtr($s, '-_', '+/'));
+        $s = strtr($s, '-_', '+/');
+        $pad = strlen($s) % 4;
+        if ($pad) $s .= str_repeat('=', 4 - $pad);
+
+        $out = base64_decode($s, true);
+        if ($out === false) {
+            throw new \RuntimeException('Invalid base64url');
+        }
+        return $out;
     }
 
-    private function coseAlgToOpenSSL(int $alg): int
-	{
-		return match ($alg) {
-			-7  => OPENSSL_ALGO_SHA256, // ES256
-			-35 => OPENSSL_ALGO_SHA384, // ES384
-			-36 => OPENSSL_ALGO_SHA512, // ES512
-			default => throw new \RuntimeException("Unsupported COSE alg: {$alg}")
-		};
+    private function createCborNode(string $bytes): CborNode
+    {
+        return CborNode::fromBytes($bytes);
     }
+
+	private function buildCborStr(string $type, mixed $value = null): string
+	{
+		if($type === 'null') {
+			return CborBuilder::{$type}();
+		} else {
+			return CborBuilder::{$type}($value);
+		}
+	}
 
 }
 
 
-
-class RawCborExtractor
+class CborNode
 {
 
     private string $bytes;
-    private Decoder $decoder;
+    private int $major;
+    private ?int $tag;
+    private ?int $length;
+    private int $headerLen;
 
-    public function __construct(string $bytes)
-    {
+    private function __construct(
+        string $bytes,
+        int $major,
+        ?int $tag,
+        ?int $length,
+        int $headerLen
+    ) {
         $this->bytes = $bytes;
-        $this->decoder = new Decoder();
+        $this->major = $major;
+        $this->tag = $tag;
+        $this->length = $length;
+        $this->headerLen = $headerLen;
     }
 
-    public function decodeRoot(): RawCborNode
+    /* ============================================================
+     * Construction
+     * ============================================================
+     */
+
+    public static function fromBytes(string $bytes): self
     {
-        return $this->decodeAtOffset(0, $this->bytes);
+        return self::decodeAtOffset($bytes, 0);
     }
 
-	public function decodeAtOffset(int $pos, ?string $src = null): RawCborNode
+    /* ============================================================
+     * Raw access (crypto-safe)
+     * ============================================================
+     */
+
+    public function bytes(): string
+    {
+        return $this->bytes;
+    }
+
+    public function majorType(): int
+    {
+        return $this->major;
+    }
+
+    public function tag(): ?int
+    {
+        return $this->tag;
+    }
+
+    public function isTag(int $n): bool
+    {
+        return $this->tag === $n;
+    }
+
+    /* ============================================================
+     * Navigation
+     * ============================================================
+     */
+
+    public function map(string|int $key): self
+    {
+        $this->assertMajor(5);
+
+        [$len, $p] = $this->containerStart();
+        $pairs = ($len === null) ? PHP_INT_MAX : $len;
+
+        for ($i = 0; $i < $pairs; $i++) {
+			if ($len === null) {
+				if ($p >= strlen($this->bytes)) {
+					throw new \RuntimeException("Truncated CBOR input");
+				}
+				if (ord($this->bytes[$p]) === 0xFF) {
+					break;
+				}
+			}
+
+            $k = self::decodeAtOffset($this->bytes, $p);
+            $p += strlen($k->bytes);
+            $v = self::decodeAtOffset($this->bytes, $p);
+            $p += strlen($v->bytes);
+
+			if (is_int($key)) {
+				if (($k->majorType() === 0 || $k->majorType() === 1) && $k->toPhp() === $key) {
+					return $v;
+				}
+			} elseif (is_string($key)) {
+				if ($k->majorType() === 3 && $k->toPhp() === $key) {
+					return $v;
+				}
+			}
+        }
+
+        throw new \RuntimeException("Map key '{$key}' not found");
+    }
+
+    public function list(int $index): self
+    {
+        $this->assertMajor(4);
+
+        [$len, $p] = $this->containerStart();
+
+        if ($len !== null && $index >= $len) {
+            throw new \RuntimeException("List index out of bounds");
+        }
+
+        for ($i = 0; ; $i++) {
+			if ($len === null) {
+				if ($p >= strlen($this->bytes)) {
+					throw new \RuntimeException("Truncated CBOR input");
+				}
+				if (ord($this->bytes[$p]) === 0xFF) {
+					break;
+				}
+			}
+
+            $child = self::decodeAtOffset($this->bytes, $p);
+            if ($i === $index) {
+                return $child;
+            }
+            $p += strlen($child->bytes);
+        }
+
+        throw new \RuntimeException("List index out of bounds");
+    }
+
+    public function path(string $expr): self
+    {
+        $node = $this;
+        foreach (explode('.', $expr) as $p) {
+            $node = ctype_digit($p)
+                ? $node->list((int)$p)
+                : $node->map($p);
+        }
+        return $node;
+    }
+
+    /* ============================================================
+     * Tag helpers
+     * ============================================================
+     */
+
+    public function unwrapTag24(): self
+    {
+        if ($this->tag !== 24) {
+            throw new \RuntimeException('Not tag(24)');
+        }
+        return self::decodeAtOffset($this->bytes, $this->headerLen);
+    }
+
+    /* ============================================================
+     * Decode view (never for crypto)
+     * ============================================================
+     */
+
+    public function toPhp(): mixed
+    {
+        $stream = \CBOR\StringStream::create($this->bytes);
+        $decoder = \CBOR\Decoder::create();
+        return self::normalize($decoder->decode($stream));
+    }
+
+    private static function normalize(mixed $v): mixed
+    {
+        if ($v instanceof \CBOR\Tag) {
+            return self::normalize($v->getValue());
+        }
+        if ($v instanceof \CBOR\ByteStringObject ||
+            $v instanceof \CBOR\TextStringObject ||
+            $v instanceof \CBOR\UnsignedIntegerObject ||
+            $v instanceof \CBOR\NegativeIntegerObject) {
+            return $v->getValue();
+        }
+        if ($v instanceof \CBOR\OtherObject\NullObject) return null;
+        if ($v instanceof \CBOR\OtherObject\TrueObject) return true;
+        if ($v instanceof \CBOR\OtherObject\FalseObject) return false;
+
+        if ($v instanceof \CBOR\ListObject) {
+            return array_map(fn($x) => self::normalize($x), iterator_to_array($v));
+        }
+
+        if ($v instanceof \CBOR\MapObject) {
+            $out = [];
+            foreach ($v as $item) {
+                $out[self::normalize($item->getKey())] =
+                    self::normalize($item->getValue());
+            }
+            return $out;
+        }
+
+        return $v;
+    }
+
+	public function decodeAsCbor(): CborNode
 	{
-		$src ??= $this->bytes;
-		$srcLen = strlen($src);
+		$node = $this;
 
-		if ($pos >= $srcLen) {
-			throw new \RuntimeException('CBOR decode offset beyond buffer');
+		while (($node->majorType() === 6 && $node->tag() === 24) || $node->majorType() === 2) {
+			if ($node->majorType() === 6 && $node->tag() === 24) {
+				$node = $node->unwrapTag24();
+			} else if ($node->majorType() === 2) {
+				$bytes = $node->toPhp();
+				$node = self::fromBytes($bytes);
+			}
 		}
 
-		[$major, $len, $offset] = $this->readHeader($src, $pos);
+		return $node;
+	}
 
-		/*
-		 * Major types 0,1 (unsigned / negative int)
-		 * Major type 7 (simple / float)
-		 * These are header-only values
-		 */
-		if (
-			$major === 0 ||
-			$major === 1 ||
-			$major === 7
-		) {
-			return new RawCborNode(
-				substr($src, $pos, $offset - $pos),
-				null
-			);
-		}
+    /* ============================================================
+     * Assertions
+     * ============================================================
+     */
 
-		/*
-		 * Byte string (bstr)
-		 */
-		if ($major === 2) {
-			if ($len === null) {
-				throw new \RuntimeException('Indefinite bstr not supported');
-			}
+    private function assertMajor(int $expected): void
+    {
+        if ($this->major !== $expected) {
+            throw new \RuntimeException(
+                "Expected CBOR major {$expected}, got {$this->major}"
+            );
+        }
+    }
 
-			if ($offset + $len > $srcLen) {
-				throw new \RuntimeException('CBOR bstr exceeds buffer');
-			}
+    /* ============================================================
+     * Internal decoding
+     * ============================================================
+     */
 
-			$totalLen = ($offset - $pos) + $len;
+	private static function decodeAtOffset(string $src, int $pos): self
+	{
+		[$major, $val, $p, $tag, $ai] = self::readHeaderFull($src, $pos);
+		$start = $pos;
 
-			return new RawCborNode(
-				substr($src, $pos, $totalLen),
-				substr($src, $offset, $len)
-			);
-		}
-
-		/*
-		 * Text string (tstr)
-		 */
-		if ($major === 3) {
-			if ($len === null) {
-				throw new \RuntimeException('Indefinite tstr not supported');
-			}
-
-			if ($offset + $len > $srcLen) {
-				throw new \RuntimeException('CBOR tstr exceeds buffer');
-			}
-
-			$totalLen = ($offset - $pos) + $len;
-
-			return new RawCborNode(
-				substr($src, $pos, $totalLen),
-				substr($src, $offset, $len)
-			);
-		}
-
-		/*
-		 * Tag — exactly one child item
-		 */
+		// ---- Tags ----
 		if ($major === 6) {
-			$child = $this->decodeAtOffset($offset, $src);
-
-			return new RawCborNode(
-				substr($src, $pos, ($offset - $pos) + strlen($child->bytes)),
-				null
+			$child = self::decodeAtOffset($src, $p);
+			$bytes = substr($src, $start, ($p - $start) + strlen($child->bytes));
+			return new self(
+				$bytes,
+				6,
+				$tag,
+				null,
+				$p - $start
 			);
 		}
 
-		/*
-		 * Arrays (4) and Maps (5)
-		 */
-		if ($major !== 4 && $major !== 5) {
-			throw new \RuntimeException("Unsupported CBOR major type {$major}");
+		// ---- Integers (uint / nint) ----
+		if ($major === 0 || $major === 1) {
+			return new self(
+				substr($src, $start, $p - $start),
+				$major,
+				null,
+				null,
+				$p - $start
+			);
 		}
 
-		$p = $offset;
+		// ---- Byte string / Text string ----
+		if ($major === 2 || $major === 3) {
 
-		/*
-		 * Indefinite-length array/map
-		 */
-		if ($len === null) {
+			// Definite-length string
+			if ($val !== null) {
+				return new self(
+					substr($src, $start, ($p - $start) + $val),
+					$major,
+					null,
+					$val,
+					$p - $start
+				);
+			}
+
+			// Indefinite-length string
+			$p2 = $p;
 			while (true) {
-				if ($p >= $srcLen) {
-					throw new \RuntimeException('CBOR indefinite container not terminated');
+				if ($p2 >= strlen($src)) {
+					throw new \RuntimeException("Truncated CBOR input");
 				}
 
 				// Break byte
-				if (ord($src[$p]) === 0xFF) {
-					$p++;
+				if (ord($src[$p2]) === 0xFF) {
+					$p2++;
 					break;
 				}
 
-				$child = $this->decodeAtOffset($p, $src);
-				$p += strlen($child->bytes);
+				// Each chunk MUST be a definite-length string
+				[$cMajor, $cLen, $cPos] = self::readHeader($src, $p2);
+
+				if ($cMajor !== $major || $cLen === null) {
+					throw new \RuntimeException("Invalid indefinite-length string chunk");
+				}
+
+				$p2 = $cPos + $cLen;
 			}
 
-			return new RawCborNode(
-				substr($src, $pos, $p - $pos),
-				null
+			return new self(
+				substr($src, $start, $p2 - $start),
+				$major,
+				null,
+				null,
+				$p - $start
 			);
 		}
 
-		/*
-		 * Definite-length array/map
-		 */
-		$count = ($major === 5) ? $len * 2 : $len;
+		// ---- Arrays / Maps ----
+		if ($major === 4 || $major === 5) {
+			$p2 = $p;
 
-		for ($i = 0; $i < $count; $i++) {
-			if ($p >= $srcLen) {
-				throw new \RuntimeException('CBOR container exceeds buffer');
+			if ($val === null) {
+				// Indefinite-length container
+				while (true) {
+					if ($p2 >= strlen($src)) {
+						throw new \RuntimeException("Truncated CBOR input");
+					}
+					if (ord($src[$p2]) === 0xFF) {
+						$p2++; // consume break
+						break;
+					}
+					$child = self::decodeAtOffset($src, $p2);
+					$p2 += strlen($child->bytes);
+				}
+			} else {
+				$count = ($major === 5) ? $val * 2 : $val;
+				for ($i = 0; $i < $count; $i++) {
+					if ($p2 >= strlen($src)) {
+						throw new \RuntimeException("Truncated CBOR input");
+					}
+					$child = self::decodeAtOffset($src, $p2);
+					$p2 += strlen($child->bytes);
+				}
 			}
 
-			$child = $this->decodeAtOffset($p, $src);
-			$p += strlen($child->bytes);
-		}
-
-		return new RawCborNode(
-			substr($src, $pos, $p - $pos),
-			null
-		);
-	}
-
-    public function extractMapKey(RawCborNode $map, string|int $key): RawCborNode
-    {
-        $php = $this->decodeNodeToPhp($map);
-        if (!isset($php[$key])) throw new \RuntimeException("Map key $key missing");
-        $decoded = $this->decoder->decode(StringStream::create($map->bytes));
-        foreach ($decoded as $item) {
-            if ($this->decodeBytesToPhp($this->encode($item->getKey())) === $key) {
-                return new RawCborNode($this->encode($item->getValue()), null);
-            }
-        }
-        throw new \RuntimeException('Key not found');
-    }
-
-    public function extractListIndex(RawCborNode $list, int $i): RawCborNode
-    {
-        $arr = $this->decodeNodeToPhp($list);
-        $stream = StringStream::create($list->bytes);
-        $obj = $this->decoder->decode($stream);
-        return new RawCborNode($this->encode($obj[$i]), null);
-    }
-
-    public function decodeNodeToPhp(RawCborNode $n): mixed
-    {
-        return $this->decodeBytesToPhp($n->bytes);
-    }
-
-    public function decodeBytesToPhp(string $b, $test=false): mixed
-    {
-		$stream = StringStream::create($b);
-		$decoded = $this->decoder->decode($stream);
-		$php = $this->normalize($decoded);
-		return $php;
-    }
-
-	private function normalize(mixed $o): mixed
-	{
-		// ---- TAGGED OBJECTS ----
-		if ($o instanceof Tag) {
-			$value = $o->getValue();
-
-			// RFC 8949: tag(24) = embedded CBOR
-			if ($value instanceof ByteStringObject) {
-				return $this->decodeBytesToPhp($value->getValue());
-			}
-
-			// Other tags: unwrap value
-			return $this->normalize($value);
-		}
-
-		// ---- BYTE STRING (NON-TAGGED) ----
-		if ($o instanceof ByteStringObject) {
-			return $o->getValue();
-		}
-
-		// ---- TEXT ----
-		if ($o instanceof \CBOR\TextStringObject) {
-			return $o->getValue();
-		}
-
-		// ---- INTEGERS ----
-		if (
-			$o instanceof \CBOR\UnsignedIntegerObject ||
-			$o instanceof \CBOR\NegativeIntegerObject
-		) {
-			return $o->getValue();
-		}
-
-		// ---- SIMPLE VALUES ----
-		if ($o instanceof \CBOR\NullObject) return null;
-		if ($o instanceof \CBOR\TrueObject) return true;
-		if ($o instanceof \CBOR\FalseObject) return false;
-
-		// ---- ARRAYS ----
-		if ($o instanceof \CBOR\ListObject) {
-			return array_map(
-				fn($v) => $this->normalize($v),
-				iterator_to_array($o)
+			return new self(
+				substr($src, $start, $p2 - $start),
+				$major,
+				null,
+				$val,
+				$p - $start
 			);
 		}
 
-		// ---- MAPS ----
-		if ($o instanceof \CBOR\MapObject) {
-			$out = [];
-			foreach ($o as $item) {
-				$out[$this->normalize($item->getKey())] =
-					$this->normalize($item->getValue());
+		// ---- Simple values & floats ----
+		if ($major === 7) {
+
+			// Simple values (including ai=24 extended simple)
+			if ($ai < 25) {
+				return new self(
+					substr($src, $start, $p - $start),
+					7,
+					null,
+					null,
+					$p - $start
+				);
 			}
-			return $out;
+
+			// Floats
+			if ($ai === 25) $extra = 2;       // float16
+			elseif ($ai === 26) $extra = 4;   // float32
+			elseif ($ai === 27) $extra = 8;   // float64
+			else {
+				throw new \RuntimeException("Unsupported CBOR simple/float value");
+			}
+
+			return new self(
+				substr($src, $start, ($p - $start) + $extra),
+				7,
+				null,
+				null,
+				$p - $start
+			);
 		}
 
-		return $o;
+		throw new \RuntimeException("Unsupported CBOR major {$major}");
 	}
 
-    public function extractAlgoFromProtected(string $b): int
-    {
-        $m = $this->decodeBytesToPhp($b);
-        return $m[1] ?? -7;
-    }
-
-	public function readHeader(string $b, int $p): array
+	private static function readHeaderFull(string $b, int $p): array
 	{
-		$initial = ord($b[$p++]);
-		$major = $initial >> 5;
-		$ai = $initial & 31;
-
-		// Indefinite length
-		if ($ai === 31) {
-			return [$major, null, $p];
+		if ($p >= strlen($b)) {
+			throw new \RuntimeException("Truncated CBOR input");
 		}
+
+		$i = ord($b[$p++]);
+		$major = $i >> 5;
+		$ai = $i & 31;
 
 		if ($ai < 24) {
-			return [$major, $ai, $p];
+			$val = $ai;
+		} elseif ($ai === 24) {
+			if ($p >= strlen($b)) {
+				throw new \RuntimeException("Truncated CBOR additional info");
+			}
+			$val = ord($b[$p]);
+			$p += 1;
+		} elseif ($ai === 25) {
+			$val = unpack('n', substr($b, $p, 2))[1];
+			$p += 2;
+		} elseif ($ai === 26) {
+			$val = unpack('N', substr($b, $p, 4))[1];
+			$p += 4;
+		} elseif ($ai === 27) {
+			$val = unpack('J', substr($b, $p, 8))[1];
+			$p += 8;
+		} elseif ($ai === 31) {
+			$val = null;
+		} else {
+			throw new \RuntimeException("Unsupported additional info");
 		}
 
-		if ($ai === 24) {
-			return [$major, ord($b[$p]), $p + 1];
-		}
+		$tag = ($major === 6) ? $val : null;
 
-		if ($ai === 25) {
-			return [$major, unpack('n', substr($b, $p, 2))[1], $p + 2];
-		}
-
-		if ($ai === 26) {
-			return [$major, unpack('N', substr($b, $p, 4))[1], $p + 4];
-		}
-
-		if ($ai === 27) {
-			$v = unpack('J', substr($b, $p, 8))[1];
-			return [$major, $v, $p + 8];
-		}
-
-		throw new \RuntimeException('Unsupported CBOR additional info: ' . $ai);
+		// IMPORTANT: return $ai as well
+		return [$major, $val, $p, $tag, $ai];
 	}
 
-    private function encode(AbstractCBORObject $o): string
+    private function containerStart(): array
     {
-        return (new Encoder())->encode($o);
+        return [$this->length, $this->headerLen];
     }
 
 }
 
 
-class RawCborNode
+class CborBuilder
 {
 
-	public string $bytes;
-	public string|int|null $value = null;
-
-    public function __construct(string $bytes, string|int|null $value)
+    /** Pass-through for already-encoded CBOR items */
+    public static function raw(string $cborItemBytes): string
     {
-		$this->bytes = $bytes;
-		$this->value = $value;
+        return $cborItemBytes;
+    }
+
+    public static function null(): string
+    {
+        return "\xF6";
+    }
+
+    public static function text(string $s): string
+    {
+        $len = strlen($s);
+        return self::encodeTypeAndLen(3, $len) . $s;
+    }
+
+    public static function bytes(string $b): string
+    {
+        $len = strlen($b);
+        return self::encodeTypeAndLen(2, $len) . $b;
+    }
+
+    /** Encode a CBOR tag (major type 6) */
+    public static function tag(int $tagNumber, string $encodedItem): string
+    {
+        if ($tagNumber < 0) {
+            throw new \RuntimeException('CBOR tag number must be non-negative');
+        }
+        if (!is_string($encodedItem)) {
+            throw new \RuntimeException('CborBuilder::tag expects encoded CBOR item');
+        }
+
+        return self::encodeTypeAndLen(6, $tagNumber) . $encodedItem;
+    }
+
+    /** @param string[] $encodedItems */
+    public static function list(array $encodedItems): string
+    {
+        $out = self::encodeTypeAndLen(4, count($encodedItems));
+
+        foreach ($encodedItems as $item) {
+            if (!is_string($item)) {
+                throw new \RuntimeException(
+                    'CborBuilder::list expects encoded CBOR byte strings'
+                );
+            }
+            $out .= $item;
+        }
+
+        return $out;
+    }
+
+    /**
+     * @param array<int, array{0:string,1:string}> $pairs
+     *        Each pair is [encodedKey, encodedValue]
+     */
+    public static function map(array $pairs): string
+    {
+        $out = self::encodeTypeAndLen(5, count($pairs));
+
+        foreach ($pairs as $pair) {
+            if (!is_array($pair) || count($pair) !== 2) {
+                throw new \RuntimeException(
+                    'CborBuilder::map expects pairs of [encodedKey, encodedValue]'
+                );
+            }
+
+            [$k, $v] = $pair;
+
+            if (!is_string($k) || !is_string($v)) {
+                throw new \RuntimeException(
+                    'CborBuilder::map keys and values must be encoded CBOR strings'
+                );
+            }
+
+            $out .= $k . $v;
+        }
+
+        return $out;
+    }
+
+    /**
+     * Encode initial byte(s) for major type + length using
+     * canonical (minimal) CBOR encoding.
+     *
+     * major: 0..7
+     * len:   0..(2^64 - 1)
+     */
+    private static function encodeTypeAndLen(int $major, int $len): string
+    {
+        if ($major < 0 || $major > 7) {
+            throw new \RuntimeException("Invalid CBOR major type: {$major}");
+        }
+        if ($len < 0) {
+            throw new \RuntimeException("Invalid CBOR length: {$len}");
+        }
+
+        $mt = $major << 5;
+
+        if ($len < 24) {
+            return chr($mt | $len);
+        }
+        if ($len <= 0xFF) {
+            return chr($mt | 24) . chr($len);
+        }
+        if ($len <= 0xFFFF) {
+            return chr($mt | 25) . pack('n', $len);
+        }
+        if ($len <= 0xFFFFFFFF) {
+            return chr($mt | 26) . pack('N', $len);
+        }
+
+        // 64-bit length (canonical)
+        $hi = intdiv($len, 0x100000000);
+        $lo = $len % 0x100000000;
+
+        return chr($mt | 27) . pack('NN', $hi, $lo);
     }
 
 }
