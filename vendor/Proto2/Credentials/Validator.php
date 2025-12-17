@@ -55,7 +55,8 @@ class Validator
     private string $nonce;
     private string $origin;
     private string $encryptionKey;
-    private bool $debug = false;
+
+    private array $debug = [];
 
     /** @var string[] PEM root certs */
     private array $trustedRootCerts = [];
@@ -65,14 +66,17 @@ class Validator
         $this->nonce = $nonce;
         $this->origin = $origin;
         $this->encryptionKey = $encryptionKey ?? '';
-
-        $this->debug = isset($_GET['debug']);
     }
 
     /* ============================================================
      * Public API
      * ============================================================
      */
+
+	public function getDebugLog(): array
+	{
+		return $this->debug;
+	}
 
     public function loadTrustedRootsFromPemFile(string $pemPath): void
     {
@@ -110,6 +114,7 @@ class Validator
 
         $docNode = $rootNode->path('documents.0');
         $docPhp  = $docNode->toPhp();
+        $docType = $docPhp['docType'] ?? null;
 
         $issuerSignedNode = $rootNode->path('documents.0.issuerSigned');
         $deviceKey = $this->verifyIssuer($issuerSignedNode);
@@ -117,12 +122,12 @@ class Validator
         $devicePemKey = $this->coseKeyToPem($deviceKey);
 
         $deviceSignedNode = $rootNode->path('documents.0.deviceSigned');
-        $this->verifyDevice($deviceSignedNode, $devicePemKey);
+        $this->verifyDevice($deviceSignedNode, $devicePemKey, $docType);
 
         return [
             'success'  => true,
             'status'   => 0,
-            'doc_type' => $docPhp['docType'] ?? null,
+            'doc_type' => $docType,
             'data'     => $this->extractDataFromDocument($docPhp),
         ];
     }
@@ -138,19 +143,19 @@ class Validator
 
         [$prot, $unprot, $payload, $sigRaw] = $issuerAuthNode->toPhp();
 
-        $sigStruct = $this->buildCoseSigStructure('Signature1', $prot, '', $payload);
+        $sigStructure = $this->buildCoseSigStructure('Signature1', $prot, '', $payload);
 
         $alg = $this->coseAlgToOpenSSL($prot);
-        $sigDer = $this->coseSignatureToDer($sigRaw);
+        $derSignature = $this->coseSignatureToDer($sigRaw);
 
 		$certChain = $this->extractX5chainDerArray($unprot);
 		$leafCertDer = $certChain[0];
 
-        $pem = "-----BEGIN CERTIFICATE-----\n"
+        $issuerPemKey = "-----BEGIN CERTIFICATE-----\n"
             . chunk_split(base64_encode($leafCertDer), 64)
             . "-----END CERTIFICATE-----\n";
 
-        if (openssl_verify($sigStruct, $sigDer, $pem, $alg) !== 1) {
+        if (openssl_verify($sigStructure, $derSignature, $issuerPemKey, $alg) !== 1) {
             throw new \RuntimeException('Issuer signature invalid');
         }
 
@@ -174,7 +179,7 @@ class Validator
      * ============================================================
      */
 
-    private function verifyDevice(CborNode $deviceSignedNode, string $devicePemKey): void
+    private function verifyDevice(CborNode $deviceSignedNode, string $devicePemKey, ?string $docType): void
     {
         $deviceAuthNode = $deviceSignedNode->path('deviceAuth.deviceSignature');
 
@@ -184,28 +189,41 @@ class Validator
 
         $namespacesNode = $deviceSignedNode->path('nameSpaces');
 
-        // DeviceAuthentication = [ "DeviceAuthentication", SessionTranscript, DeviceNameSpacesBytes ]
-        $deviceAuthentication =
-            $this->buildCborStr('list', [
+        if($docType) {
+			// ISO/IEC 18013-5
+			$deviceAuthenticationInner = $this->buildCborStr('list', [
+				$this->buildCborStr('text', 'DeviceAuthentication'),
+				$this->buildCborStr('raw', $sessionTranscript),
+				$this->buildCborStr('text', $docType),
+				$this->buildCborStr('raw', $namespacesNode->bytes()),
+			]);
+        } else {
+			// DC-API
+			$deviceAuthenticationInner = $this->buildCborStr('list', [
 				$this->buildCborStr('text', 'DeviceAuthentication'),
 				$this->buildCborStr('raw', $sessionTranscript),
 				$this->buildCborStr('raw', $namespacesNode->bytes())
-            ]);
-
-        $sigStruct = $this->buildCoseSigStructure('Signature1', $prot, $deviceAuthentication, $payload);
-
-        $sigDer = $this->coseSignatureToDer($sigRaw);
+			]);
+		}
+		
+		$deviceAuthentication = CborBuilder::tag(24, CborBuilder::bytes($deviceAuthenticationInner));
+        $sigStructure = $this->buildCoseSigStructure('Signature1', $prot, '', $deviceAuthentication);
+        $derSignature = $this->coseSignatureToDer($sigRaw);
         $alg = $this->coseAlgToOpenSSL($prot);
+        
+        $this->logDebug('origin', $this->origin);
+        $this->logDebug('nonce', $this->nonce);
+        $this->logDebug('docType', $docType);
+        $this->logDebug('protectedHeaderBytes (hex)', bin2hex($prot));
+        $this->logDebug('sessionTranscript (hex)', bin2hex($sessionTranscript));
+        $this->logDebug('namespaces (hex)', bin2hex($namespacesNode->bytes()));
+        $this->logDebug('deviceAuthentication (hex)', bin2hex($deviceAuthentication));
+        $this->logDebug('sigStructure (hex)', bin2hex($sigStructure));
+        $this->logDebug('derSignature (hex)', bin2hex($derSignature));
+        $this->logDebug('alg', $alg);
+        $this->logDebug('devicePemKey', $devicePemKey);
 
-        if ($this->debug) {
-			echo "sessionTranscript: " . bin2hex($sessionTranscript) . PHP_EOL;
-            echo "DeviceAuthentication: " . bin2hex($deviceAuthentication) . PHP_EOL;
-            echo "Sig_structure: " . bin2hex($sigStruct) . PHP_EOL;
-            echo "devicePemKey: " . $devicePemKey . PHP_EOL;
-            exit;
-        }
-
-        if (openssl_verify($sigStruct, $sigDer, $devicePemKey, $alg) !== 1) {
+        if (openssl_verify($sigStructure, $derSignature, $devicePemKey, $alg) !== 1) {
             throw new \RuntimeException('Device signature invalid');
         }
     }
@@ -216,33 +234,26 @@ class Validator
      */
 
 	private function buildDeviceSessionTranscript(): string
-	{
-		// OpenID4VP DC API requires EXACTLY 3 elements:
-		// [ origin, nonce, jwkThumbprint | null ]
-		$handoverItems = [
-			$this->buildCborStr('text', $this->origin),
-			$this->buildCborStr('text', $this->nonce)
-		];
-
-		if ($this->encryptionKey) {
-			$handoverItems[] = $this->buildCborStr('bytes', $this->encryptionKey);
-		} else {
-			$handoverItems[] = $this->buildCborStr('null');
-		}
-
-		$handoverData = $this->buildCborStr('list', $handoverItems);
-
-		$handoverHash = hash('sha256', $handoverData, true);
-
+	{	
+		// OpenID4VP 1.0 (Final, July 2025), Appendix B.2.6.2
+		// [ origin, nonce, encryptionKey|null ]
 		$handover = $this->buildCborStr('list', [
-			$this->buildCborStr('text', 'OpenID4VPDCAPIHandover'),
-			$this->buildCborStr('bytes', $handoverHash)
+			$this->buildCborStr('text', $this->origin),
+			$this->buildCborStr('text', $this->nonce),
+			$this->buildCborStr($this->encryptionKey ? 'bytes' : 'null', $this->encryptionKey)
 		]);
 
+		$handoverHash = hash('sha256', $handover, true);
+
+		// OpenID4VP 1.0 (Final, July 2025), Appendix B.2.6.2
+		// [ null, null, [ "OpenID4VPDCAPIHandover", BrowserHandoverDataBytes ] ]
 		$sessionTranscript = $this->buildCborStr('list', [
 			$this->buildCborStr('null'),
 			$this->buildCborStr('null'),
-			$handover
+			$this->buildCborStr('list', [
+				$this->buildCborStr('text', 'OpenID4VPDCAPIHandover'),
+				$this->buildCborStr('bytes', $handoverHash)
+			])
 		]);
 
 		return $sessionTranscript;
@@ -253,12 +264,14 @@ class Validator
      * ============================================================
      */
 
-    private function buildCoseSigStructure(string $context, string $protected, string $externalAAD, ?string $payload): string {
+    private function buildCoseSigStructure(string $context, string $protected, string $externalAAD, ?string $payload): string
+    {
+		$payloadType = is_null($payload) ? 'null' : 'bytes';
         return $this->buildCborStr('list', [
             $this->buildCborStr('text', $context),
 			$this->buildCborStr('bytes', $protected),
             $this->buildCborStr('bytes', $externalAAD),
-            $this->buildCborStr('bytes', $payload ?? ''),
+            $this->buildCborStr($payloadType, $payload),
         ]);
     }
 
@@ -407,21 +420,34 @@ class Validator
 		}
 	}
 
-    private function extractDataFromDocument(array $doc): array
-    {
-        $out = [];
+	private function extractDataFromDocument(array $doc): array
+	{
+		$out = [];
 
-        foreach ($doc['issuerSigned']['nameSpaces'] ?? [] as $ns => $items) {
+		foreach ($doc['issuerSigned']['nameSpaces'] ?? [] as $ns => $items) {
+
 			$ns = (string) $ns;
-            foreach ($items as $item) {
-                if (isset($item['elementIdentifier'], $item['elementValue'])) {
-                    $out[$ns][$item['elementIdentifier']] = $item['elementValue'];
-                }
-            }
-        }
 
-        return $out;
-    }
+			foreach ($items as $item) {
+			
+				$node = $this->createCborNode($item);
+				$data = $node->toPhp();
+				
+				$key = $data['elementIdentifier'] ?? null;
+				$val = $data['elementValue'] ?? null;
+				
+				if(is_string($val) && preg_match('~[^\x20-\x7E\t\r\n]~', $val) > 0) {
+					$val = base64_encode($val);
+				}
+
+				if(is_string($key) && $key) {
+					$out[$ns][$key] = $val;
+				}
+			}
+		}
+
+		return $out;
+	}
 
     private function base64UrlDecode(string $s): string
     {
@@ -448,6 +474,11 @@ class Validator
 		} else {
 			return CborBuilder::{$type}($value);
 		}
+	}
+	
+	private function logDebug($key, $val): void
+	{
+		$this->debug[$key] = trim($val);
 	}
 
 }
