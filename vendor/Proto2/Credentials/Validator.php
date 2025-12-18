@@ -54,18 +54,25 @@ class Validator
 
     private string $nonce;
     private string $origin;
-    private string $encryptionKey;
+
+    private ?object $encryptionKey;
+	private ?object $jwt;
 
     private array $debug = [];
 
     /** @var string[] PEM root certs */
     private array $trustedRootCerts = [];
 
-    public function __construct(string $nonce, string $origin, ?string $encryptionKey = null)
+    public function __construct(string $nonce, string $origin, ?object $encryptionKey = null, ?object $jwt = null)
     {
         $this->nonce = $nonce;
         $this->origin = $origin;
-        $this->encryptionKey = $encryptionKey ?? '';
+        $this->encryptionKey = $encryptionKey;
+        $this->jwt = $jwt;
+        
+        if(!$this->jwt) {
+			$this->jwt = new \Proto2\Security\Jwt;
+        }
     }
 
     /* ============================================================
@@ -98,8 +105,15 @@ class Validator
 
     public function validateCredentialResponse(string $credentialResponse): array
     {
+		if($this->encryptionKey) {
+			$privateKeyPem = $this->encryptionKey->getPrivateKeyPem();
+			$decrypted = json_decode($this->jwt->decrypt($credentialResponse, $privateKeyPem), true);
+			$credentialId = array_keys($decrypted['vp_token'])[0];
+			$credentialResponse = $decrypted['vp_token'][$credentialId][0];
+		}
+
         $bytes = $this->base64UrlDecode($credentialResponse);
-        $rootNode  = $this->createCborNode($bytes);
+        $rootNode = $this->createCborNode($bytes);
 
         $response = $rootNode->toPhp();
 
@@ -234,13 +248,15 @@ class Validator
      */
 
 	private function buildDeviceSessionTranscript(): string
-	{	
+	{
+		$thumbprint = $this->buildPublicKeyThumbprint();
+	
 		// OpenID4VP 1.0 (Final, July 2025), Appendix B.2.6.2
 		// [ origin, nonce, encryptionKey|null ]
 		$handover = $this->buildCborStr('list', [
 			$this->buildCborStr('text', $this->origin),
 			$this->buildCborStr('text', $this->nonce),
-			$this->buildCborStr($this->encryptionKey ? 'bytes' : 'null', $this->encryptionKey)
+			$this->buildCborStr($thumbprint ? 'bytes' : 'null', $thumbprint)
 		]);
 
 		$handoverHash = hash('sha256', $handover, true);
@@ -259,6 +275,29 @@ class Validator
 		return $sessionTranscript;
 	}
 
+	private function buildPublicKeyThumbprint(): string
+	{
+		if (!$this->encryptionKey) {
+			return '';
+		}
+
+		$jwk = $this->encryptionKey->getPublicJwk();
+
+		// RFC 7638 canonical JWK
+		$canonical = [
+			'crv' => 'P-256',
+			'kty' => 'EC',
+			'x'   => $jwk['x'],
+			'y'   => $jwk['y'],
+		];
+
+		// JSON without whitespace or escaping
+		$json = json_encode($canonical, JSON_UNESCAPED_SLASHES);
+
+		// Return raw 32-byte SHA-256 digest
+		return hash('sha256', $json, true);
+	}
+
     /* ============================================================
      * Shared helpers
      * ============================================================
@@ -267,6 +306,7 @@ class Validator
     private function buildCoseSigStructure(string $context, string $protected, string $externalAAD, ?string $payload): string
     {
 		$payloadType = is_null($payload) ? 'null' : 'bytes';
+
         return $this->buildCborStr('list', [
             $this->buildCborStr('text', $context),
 			$this->buildCborStr('bytes', $protected),
@@ -435,7 +475,7 @@ class Validator
 				
 				$key = $data['elementIdentifier'] ?? null;
 				$val = $data['elementValue'] ?? null;
-				
+
 				if(is_string($val) && preg_match('~[^\x20-\x7E\t\r\n]~', $val) > 0) {
 					$val = base64_encode($val);
 				}
@@ -927,6 +967,14 @@ class CborBuilder
         $len = strlen($s);
         return self::encodeTypeAndLen(3, $len) . $s;
     }
+
+	public static function int(int $n): string
+	{
+		if ($n >= 0) {
+			return self::encodeTypeAndLen(0, $n);
+		}
+		return self::encodeTypeAndLen(1, -1-$n);
+	}
 
     public static function bytes(string $b): string
     {
