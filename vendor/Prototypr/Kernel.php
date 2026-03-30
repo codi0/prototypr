@@ -330,6 +330,12 @@ namespace Prototypr {
 			$this->composer->sync();
 			//check platform
 			$this->platform->check();
+			//create facade class?
+			$facadeClass = ucfirst($this->config['namespace']);
+			if(!class_exists($facadeClass, false)) {
+				eval("class $facadeClass { use " . __NAMESPACE__ . "\FacadeTrait; }");
+				$facadeClass::setInstance($this);
+			}
 			//loop through modules
 			foreach(glob($this->config['modules_dir'] . '/*', GLOB_ONLYDIR) as $dir) {
 				//get whitelist?
@@ -821,23 +827,6 @@ namespace Prototypr {
 			}
 			//return
 			return $service;
-		}
-
-		public function facade($name, $obj) {
-			//format name
-			$name = ucfirst($name);
-			//create facade class?
-			if(!class_exists($name, false)) {
-				eval("class $name { use " . __NAMESPACE__ . "\FacadeTrait; }");
-			}
-			//set instance
-			$name::setInstance($obj);
-			//is kernel?
-			if($obj === $this) {
-				$this->config('namespace', $name);
-			}
-			//return
-			return $name;
 		}
 
 		public function event($name, $params='%%null%%', $remove=false) {

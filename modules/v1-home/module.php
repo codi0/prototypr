@@ -13,10 +13,6 @@ if(PROTOTYPR_VERSION != 1) {
 }
 
 
-//Config: app facade
-//Simplifies static calls to kernel - E.g. App::url()
-$this->facade('App', $this);
-
 //Config: set theme?
 if(!$this->config('theme')) {
 	$this->config('theme', 'theme');
