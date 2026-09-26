@@ -56,7 +56,14 @@ class Model {
 			throw new \Exception("Property $key not found");
 		}
 		//run custom filters
-		$val = $this->kernel->validator->filter($this->__meta['props'][$key]['filters'], $val);
+		$filters = $this->__meta['props'][$key]['filters'];
+		if($filters) {
+			//resolve directly so service re-entry is handled by Kernel::service()
+			if(!$validator = $this->kernel->service('validator')) {
+				throw new \Exception("Service validator not found");
+			}
+			$val = $validator->filter($filters, $val);
+		}
 		//type cast value
 		$val = $this->onTypecast($key, $val);
 		//filter value
@@ -108,17 +115,44 @@ class Model {
 	}
 
 	public final function isValid() {
+		//already validating?
+		if($this->__meta['validating']) {
+			return empty($this->__meta['errors']);
+		}
+		//start validating
+		$this->__meta['validating'] = true;
+		try {
+			return $this->__isValid();
+		} finally {
+			$this->__meta['validating'] = false;
+		}
+	}
+
+	private function __isValid() {
 		//reset errors
 		$this->__meta['errors'] = [];
+		$validator = null;
+		//get validator if needed
+		foreach($this->__meta['props'] as $meta) {
+			if($meta['rules']) {
+				//resolve directly so service re-entry is handled by Kernel::service()
+				if(!$validator = $this->kernel->service('validator')) {
+					throw new \Exception("Service validator not found");
+				}
+				break;
+			}
+		}
 		//loop through props
 		foreach($this->__meta['props'] as $key => $meta) {
 			//get value
 			$val = $this->__meta['props'][$key]['value'];
 			//process custom rules
-			$this->kernel->validator->isValid($this->__meta['props'][$key]['rules'], $val);
-			//process validation errors
-			foreach($this->kernel->validator->errors() as $error) {
-				$this->addError($key, $error);
+			if($validator) {
+				$validator->isValid($this->__meta['props'][$key]['rules'], $val);
+				//process validation errors
+				foreach($validator->errors() as $error) {
+					$this->addError($key, $error);
+				}
 			}
 		}
 		//validate hook
@@ -378,6 +412,7 @@ class Model {
 				'readonly' => false,
 				'hydrating' => false,
 				'processing' => false,
+				'validating' => false,
 				'isNew' => true,
 			];
 			//default rel

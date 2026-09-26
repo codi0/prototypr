@@ -291,6 +291,8 @@ class Orm {
 				foreach($meta['relations'] as $k => $v) {
 					$model->$k = $this->syncRelation($model, $k, $v, true);
 				}
+				//call saved event
+				$this->kernel->event('orm.saved', $data, $dataOld, $model);
 			}
 		}
 		//return

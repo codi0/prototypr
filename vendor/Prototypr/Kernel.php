@@ -28,6 +28,7 @@ namespace Prototypr {
 		private $events = [];
 		private $routes = [];
 		private $services = [];
+		private $servicesLoading = [];
 
 		private $httpMessages = [
 			200 => 'Ok',
@@ -743,90 +744,101 @@ namespace Prototypr {
 				//stop here
 				return true;
 			}
-			//set vars
-			$closure = $this->config("{$name}_closure");
-			$opts = $this->config("{$name}_opts") ?: [];
-			$shared = is_bool($obj) ? $obj : ($this->config("{$name}_shared") !== false);
-			//return shared service?
-			if($shared && isset($this->services[$name])) {
-				return $this->services[$name];
+			//already loading?
+			if(isset($this->servicesLoading[$name])) {
+				$chain = implode(' -> ', array_keys($this->servicesLoading));
+				throw new \Exception("Circular service dependency: " . $chain . " -> " . $name);
 			}
-			//class exists?
-			if(!$class = $this->class($name)) {
-				//stop here?
-				if(!$closure) {
-					return null;
+			//start loading
+			$this->servicesLoading[$name] = true;
+			try {
+				//set vars
+				$closure = $this->config("{$name}_closure");
+				$opts = $this->config("{$name}_opts") ?: [];
+				$shared = is_bool($obj) ? $obj : ($this->config("{$name}_shared") !== false);
+				//return shared service?
+				if($shared && isset($this->services[$name])) {
+					return $this->services[$name];
 				}
-			}
-			//use annotations?
-			if($class && $this->config['annotations']) {
-				//reflect class
-				$ref = new \ReflectionClass($class);
-				//loop through props
-				foreach($ref->getProperties() as $prop) {
-					//set vars
-					$propName = $prop->getName();
-					$annotations = Meta::annotations($prop);
-					//loop through annotations
-					foreach($annotations as $param => $args) {
-						//inject service?
-						if($param === 'inject') {
-							$opts[$propName] = '[' . ($args ? $args[0] : $propName) . ']';
+				//class exists?
+				if(!$class = $this->class($name)) {
+					//stop here?
+					if(!$closure) {
+						return null;
+					}
+				}
+				//use annotations?
+				if($class && $this->config['annotations']) {
+					//reflect class
+					$ref = new \ReflectionClass($class);
+					//loop through props
+					foreach($ref->getProperties() as $prop) {
+						//set vars
+						$propName = $prop->getName();
+						$annotations = Meta::annotations($prop);
+						//loop through annotations
+						foreach($annotations as $param => $args) {
+							//inject service?
+							if($param === 'inject') {
+								$opts[$propName] = '[' . ($args ? $args[0] : $propName) . ']';
+							}
 						}
 					}
 				}
-			}
-			//resolve opts
-			foreach($opts as $k => $v) {
-				//is string?
-				if($v && is_string($v)) {
-					//replace with service?
-					if($v[0] === '[' && $v[strlen($v)-1] === ']') {
-						//get param
-						$param = trim($v, '[]');
-						//has service?
-						if(!$opts[$k] = $this->service($param)) {
-							//wrap helper in closure
-							$opts[$k] = function() use($param) {
-								$args = func_get_args();
-								return $this->$param(...$args);
-							};
+				//resolve opts
+				foreach($opts as $k => $v) {
+					//is string?
+					if($v && is_string($v)) {
+						//replace with service?
+						if($v[0] === '[' && $v[strlen($v)-1] === ']') {
+							//get param
+							$param = trim($v, '[]');
+							//has service?
+							if(!$opts[$k] = $this->service($param)) {
+								//wrap helper in closure
+								$opts[$k] = function() use($param) {
+									$args = func_get_args();
+									return $this->$param(...$args);
+								};
+							}
+						}
+						//replace with config?
+						if($v[0] === '%' && $v[strlen($v)-1] === '%') {
+							//get param
+							$param = trim($v, '%');
+							//find config
+							$opts[$k] = $this->config($param);
 						}
 					}
-					//replace with config?
-					if($v[0] === '%' && $v[strlen($v)-1] === '%') {
-						//get param
-						$param = trim($v, '%');
-						//find config
-						$opts[$k] = $this->config($param);
-					}
 				}
+				//inject kernel?
+				if(!$opts || !isset($opts[0])) {
+					$opts['kernel'] = $this;
+				}
+				//create closure?
+				if($closure === null) {
+					//default closure
+					$closure = function($opts, $class) {
+						if($opts && isset($opts[0])) {
+							return new $class(...$opts);
+						} else if($opts) {
+							return new $class($opts);
+						} else {
+							return new $class;
+						}
+					};
+				}
+				//init service
+				$service = $closure($opts, $class);
+				//cache service?
+				if($shared) {
+					$this->services[$name] = $service;
+				}
+				//return
+				return $service;
+			} finally {
+				unset($this->servicesLoading[$name]);
 			}
-			//inject kernel?
-			if(!$opts || !isset($opts[0])) {
-				$opts['kernel'] = $this;
-			}
-			//create closure?
-			if($closure === null) {
-				//default closure
-				$closure = function($opts, $class) {
-					if($opts && isset($opts[0])) {
-						return new $class(...$opts);
-					} else if($opts) {
-						return new $class($opts);
-					} else {
-						return new $class;
-					}
-				};
-			}
-			//init service
-			$service = $closure($opts, $class);
-			//cache service?
-			if($shared) {
-				$this->services[$name] = $service;
-			}
-			//return
-			return $service;
 		}
 
 		public function event($name, $params='%%null%%', $remove=false) {
